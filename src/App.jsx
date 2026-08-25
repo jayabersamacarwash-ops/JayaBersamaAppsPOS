@@ -9,6 +9,8 @@ import CafePOS from './pages/CafePOS'
 import CarwashQueue from './pages/CarwashQueue'
 import Finance from './pages/Finance'
 import Admin from './pages/Admin'
+import Karyawan from './pages/Karyawan'
+import Database from './pages/Database'
 
 // Komponen Proteksi Rute berdasarkan Login & Peran (Role)
 const ProtectedRoute = ({ children, ownerOnly = false }) => {
@@ -112,12 +114,32 @@ const AppContent = () => {
               } 
             />
 
+            {/* Rute Kelola Karyawan (Owner Only) */}
+            <Route 
+              path="/karyawan" 
+              element={
+                <ProtectedRoute ownerOnly={true}>
+                  <Karyawan />
+                </ProtectedRoute>
+              } 
+            />
+
             {/* Rute Kelola Admin (Owner Only) */}
             <Route 
               path="/admin" 
               element={
                 <ProtectedRoute ownerOnly={true}>
                   <Admin />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Rute Database Manager (Owner Only) */}
+            <Route 
+              path="/database" 
+              element={
+                <ProtectedRoute ownerOnly={true}>
+                  <Database />
                 </ProtectedRoute>
               } 
             />

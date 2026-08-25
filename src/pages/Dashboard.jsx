@@ -24,9 +24,12 @@ import {
   ChevronDown,
   Layers,
   TrendingDown,
-  ShoppingCart
+  ShoppingCart,
+  Printer,
+  FileText
 } from 'lucide-react'
 import InteractiveCalendar from '../components/InteractiveCalendar'
+import { formatRupiah, parseDateSafe } from '../utils/helpers'
 
 // Helper function to fetch all rows beyond Supabase's default 1000 row REST limit
 // Now supports server-side filtering by date column
@@ -76,7 +79,7 @@ const fetchCafeRows = async (start = null, end = null) => {
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview') // 'overview', 'cafe', 'carwash', 'finance', 'customers'
+  const [activeTab, setActiveTab] = useState('overview') // 'overview', 'cafe', 'carwash', 'finance', 'customers', 'reports'
   const [timeRange, setTimeRange] = useState('month') // 'today', 'month', 'custom', 'all'
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -113,7 +116,7 @@ const Dashboard = () => {
       // Helper to compute date range for Supabase
       let filterStart = null
       let filterEnd = null
-      
+
       if (timeRange !== 'all') {
         const now = new Date()
         if (timeRange === 'today') {
@@ -196,58 +199,6 @@ const Dashboard = () => {
   }, [])
 
   // Helper formatting
-  const formatRupiah = (val) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(val || 0)
-  }
-
-  const parseDateSafe = (dateStr) => {
-    if (!dateStr) return new Date()
-    if (dateStr instanceof Date) return dateStr
-
-    const str = String(dateStr).trim()
-    if (str.includes('T')) {
-      const d = new Date(str)
-      if (!isNaN(d.getTime())) return d
-    }
-
-    const parts = str.split(/[\sT]+/)
-    const datePart = parts[0]
-    const timePart = parts[1] || '00:00:00'
-
-    const dateSplit = datePart.split(/[-/]/)
-    if (dateSplit.length === 3) {
-      let day, month, year
-      if (dateSplit[0].length === 4) {
-        year = parseInt(dateSplit[0], 10)
-        month = parseInt(dateSplit[1], 10) - 1
-        day = parseInt(dateSplit[2], 10)
-      } else {
-        day = parseInt(dateSplit[0], 10)
-        month = parseInt(dateSplit[1], 10) - 1
-        year = parseInt(dateSplit[2], 10)
-
-        if (month > 11) {
-          const temp = month
-          month = day - 1
-          day = temp + 1
-        }
-      }
-
-      const timeSplit = timePart.replace(/\./g, ':').split(':')
-      const hour = parseInt(timeSplit[0], 10) || 0
-      const minute = parseInt(timeSplit[1], 10) || 0
-      const second = parseInt(timeSplit[2], 10) || 0
-
-      return new Date(year, month, day, hour, minute, second)
-    }
-
-    const finalFallback = new Date(str)
-    return isNaN(finalFallback.getTime()) ? new Date() : finalFallback
-  }
 
   const isDateInRange = useCallback((dateStr) => {
     if (!dateStr) return false
@@ -449,8 +400,8 @@ const Dashboard = () => {
 
         {isOpen && (
           <>
-            <div 
-              className="fixed inset-0 z-40" 
+            <div
+              className="fixed inset-0 z-40"
               onClick={() => setOpenFilterDropdown(null)}
             />
             <div className="absolute left-0 mt-1.5 w-44 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-1.5 z-50 text-left normal-case tracking-normal max-h-56 overflow-y-auto">
@@ -459,9 +410,8 @@ const Dashboard = () => {
                   setFilters({ ...currentFilters, [columnKey]: 'ALL' })
                   setOpenFilterDropdown(null)
                 }}
-                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-between ${
-                  currentValue === 'ALL' ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
+                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-between ${currentValue === 'ALL' ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  }`}
               >
                 <span>Semua</span>
                 {currentValue === 'ALL' && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
@@ -473,9 +423,8 @@ const Dashboard = () => {
                     setFilters({ ...currentFilters, [columnKey]: val })
                     setOpenFilterDropdown(null)
                   }}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-between truncate ${
-                    currentValue === val ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                  }`}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-between truncate ${currentValue === val ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }`}
                   title={val}
                 >
                   <span className="truncate">{val}</span>
@@ -506,7 +455,7 @@ const Dashboard = () => {
       }
       return 1
     }
-    
+
     const uniqueDays = new Set(filteredCarwashList.map(cw => cw.tanggal).filter(Boolean))
     return Math.max(uniqueDays.size, 1)
   }, [filteredCarwashList, timeRange, startDate, endDate])
@@ -521,7 +470,12 @@ const Dashboard = () => {
     const periodCashStruks = filteredStrukByTime.filter(s => s.metode_bayar === 'CASH')
     const periodCashIn = periodCashStruks.reduce((sum, s) => sum + parseFloat(s.total_tagihan || 0), 0)
 
-    const periodCashOut = filteredCashflowLogs.reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const periodCashOut = filteredCashflowLogs.reduce((sum, c) => {
+      const exp = parseFloat(c.pengeluaran || 0)
+      const jenisLower = String(c.jenis || '').toLowerCase()
+      if (jenisLower.includes('pindah') || jenisLower.includes('casbon')) return sum
+      return sum + exp
+    }, 0)
     const avgCarsPerDay = (filteredCarwashList.length / operatingDays).toFixed(1)
 
     return {
@@ -538,6 +492,7 @@ const Dashboard = () => {
   const expenseBreakdown = useMemo(() => {
     const carwashCategories = {}
     const cafeCategories = {}
+    const sharedCategories = {}
 
     // Process Cashflow outflow
     filteredCashflowLogs.forEach(c => {
@@ -550,6 +505,7 @@ const Dashboard = () => {
       const jenisLower = String(c.jenis || '').toLowerCase()
       const isCarwashRelated = jenisLower === 'pengeluaran carwash'
       const isCafeRelated = jenisLower === 'pengeluaran cafe'
+      const isShared = jenisLower === 'pengeluaran bersama' || jenisLower === 'pengeluaran' || (!isCarwashRelated && !isCafeRelated && !jenisLower.includes('casbon') && !jenisLower.includes('pindah'))
 
       if (isCarwashRelated) {
         if (!carwashCategories[cat]) {
@@ -563,17 +519,26 @@ const Dashboard = () => {
         }
         cafeCategories[cat].amount += amt
         cafeCategories[cat].items.push({ tanggal: date, keterangan: ket, nominal: amt })
+      } else if (isShared) {
+        if (!sharedCategories[cat]) {
+          sharedCategories[cat] = { amount: 0, items: [] }
+        }
+        sharedCategories[cat].amount += amt
+        sharedCategories[cat].items.push({ tanggal: date, keterangan: ket, nominal: amt })
       }
     })
 
     const totalCarwashExpense = Object.values(carwashCategories).reduce((sum, v) => sum + v.amount, 0)
     const totalCafeExpense = Object.values(cafeCategories).reduce((sum, v) => sum + v.amount, 0)
+    const totalSharedExpense = Object.values(sharedCategories).reduce((sum, v) => sum + v.amount, 0)
 
     return {
       carwashCategories,
       totalCarwashExpense,
       cafeCategories,
-      totalCafeExpense
+      totalCafeExpense,
+      sharedCategories,
+      totalSharedExpense
     }
   }, [filteredCashflowLogs])
 
@@ -632,12 +597,12 @@ const Dashboard = () => {
     totalRevenue = filteredCafeList.reduce((sum, item) => sum + parseFloat(item.subtotal || item.harga_satuan * item.qty || 0), 0)
     let totalBahanBakuDibeli = 0
     let totalPengeluaranLainnya = 0
-    
+
     filteredCashflowLogs.forEach(c => {
       const jenisLower = String(c.jenis || '').toLowerCase()
       const kategoriLower = String(c.kategori || '').toLowerCase()
       const exp = parseFloat(c.pengeluaran || 0)
-      
+
       if (jenisLower === 'pengeluaran cafe') {
         if (kategoriLower === 'bahan baku') {
           totalBahanBakuDibeli += exp
@@ -657,7 +622,7 @@ const Dashboard = () => {
       const name = item.nama_menu || 'Unknown Item'
       const nameLower = String(name).trim().toLowerCase()
       const recipeIngredients = recipeMap[nameLower] || []
-      
+
       let itemHppUnit = 0
       if (recipeIngredients.length > 0) {
         recipeIngredients.forEach(ing => {
@@ -774,14 +739,14 @@ const Dashboard = () => {
   const advancedKPIs = useMemo(() => {
     const carwashStrukIds = new Set(filteredCarwashList.map(c => c.id_struk).filter(Boolean))
     const cafeStrukIds = new Set(filteredCafeList.map(c => c.id_struk).filter(Boolean))
-    
+
     let crossCount = 0
     carwashStrukIds.forEach(id => {
       if (cafeStrukIds.has(id)) {
         crossCount++
       }
     })
-    
+
     const totalCarwashStruks = carwashStrukIds.size
     const crossConversionRate = totalCarwashStruks > 0 ? ((crossCount / totalCarwashStruks) * 100).toFixed(1) : 0
 
@@ -809,13 +774,16 @@ const Dashboard = () => {
 
     // Add revenues and expenses from cashflow logs directly
     filteredCashflowLogs.forEach(c => {
+      const jenisLower = String(c.jenis || '').toLowerCase()
+      if (jenisLower.includes('pindah') || jenisLower.includes('casbon')) return
+
       const dateKey = c.tanggal ? c.tanggal.substring(0, 10) : 'Unknown'
       if (!dailyMap[dateKey]) {
         dailyMap[dateKey] = { date: dateKey, omzet: 0, cash: 0, qris: 0, pengeluaran: 0 }
       }
       const rev = parseFloat(c.pemasukan || 0)
       const exp = parseFloat(c.pengeluaran || 0)
-      
+
       dailyMap[dateKey].omzet += rev
       dailyMap[dateKey].pengeluaran += exp
 
@@ -844,6 +812,101 @@ const Dashboard = () => {
       netProfit
     }
   }, [filteredCashflowLogs])
+
+  // Laporan Akuntansi Consolidated Memo
+  const reportsAnalytics = useMemo(() => {
+    // Cafe
+    const cafeRevenue = cafeAnalytics.totalRevenue
+    const cafeHpp = cafeAnalytics.totalHpp
+    const cafeGrossProfit = cafeRevenue - cafeHpp
+
+    // Carwash
+    const carwashRevenue = carwashAnalytics.totalRevenue
+    const carwashHpp = carwashAnalytics.crewStats.reduce((sum, c) => sum + (c.wages || 0), 0)
+    const carwashGrossProfit = carwashRevenue - carwashHpp
+
+    // Consolidated
+    const consolidatedRevenue = cafeRevenue + carwashRevenue
+    const consolidatedHpp = cafeHpp + carwashHpp
+    const consolidatedGrossProfit = cafeGrossProfit + carwashGrossProfit
+
+    // Expenses
+    let totalCasbon = 0
+    let expGajiBersih = 0
+    let expOperasionalMurni = 0
+    let expBahanBakuRestok = 0
+    let expLainLain = 0
+
+    let otherIncome = 0
+
+    filteredCashflowLogs.forEach(c => {
+      const exp = parseFloat(c.pengeluaran || 0)
+      const rev = parseFloat(c.pemasukan || 0)
+      const cat = (c.kategori || '').trim()
+      const ket = (c.keterangan_transaksi || '').trim()
+      const jenisLower = String(c.jenis || '').toLowerCase()
+      const catLower = cat.toLowerCase()
+      const ketLower = ket.toLowerCase()
+
+      if (exp > 0) {
+        if (jenisLower.includes('pindah')) return // abaikan mutasi bank/kas
+
+        // 1. Cek Casbon
+        if (jenisLower.includes('casbon') || catLower.includes('casbon')) {
+          totalCasbon += exp
+        }
+        // 2. Cek Gaji Bersih (dari deskripsi)
+        else if (ketLower.includes('gaji') || catLower === 'gaji') {
+          expGajiBersih += exp
+        }
+        // 3. Cek Restok Bahan Baku
+        else if (catLower === 'bahan baku') {
+          expBahanBakuRestok += exp
+        }
+        // 4. Cek Operasional Murni
+        else if (catLower === 'operasional') {
+          expOperasionalMurni += exp
+        }
+        // 5. Lain-lain
+        else {
+          expLainLain += exp
+        }
+      }
+
+      if (rev > 0) {
+        // Hanya hitung pemasukan manual luar kasir
+        if (c.jenis === 'Pemasukan' && !c.id_sumber) {
+          otherIncome += rev
+        }
+      }
+    })
+
+    // Reklasifikasi Gaji
+    const totalBebanGaji = expGajiBersih + totalCasbon
+    const totalOperatingExpenses = expOperasionalMurni + expBahanBakuRestok + expLainLain + totalBebanGaji
+    const consolidatedNetProfit = consolidatedGrossProfit - totalOperatingExpenses + otherIncome
+
+    return {
+      cafeRevenue,
+      cafeHpp,
+      cafeGrossProfit,
+      carwashRevenue,
+      carwashHpp,
+      carwashGrossProfit,
+      consolidatedRevenue,
+      consolidatedHpp,
+      consolidatedGrossProfit,
+      totalCasbon,
+      expGajiBersih,
+      totalBebanGaji,
+      expBahanBakuRestok,
+      expOperasionalMurni,
+      expLainLain,
+      otherIncome,
+      totalOperatingExpenses,
+      consolidatedNetProfit
+    }
+  }, [cafeAnalytics, carwashAnalytics, filteredCashflowLogs])
 
   // Customer Loyalty & Visit Counter Report Aggregation
   const customerReport = useMemo(() => {
@@ -940,7 +1003,7 @@ const Dashboard = () => {
   const filteredCustomers = useMemo(() => {
     return customerReport.filter(cust => {
       const matchesSearch = cust.plat.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                            cust.favPkg.toLowerCase().includes(customerSearch.toLowerCase())
+        cust.favPkg.toLowerCase().includes(customerSearch.toLowerCase())
 
       let matchesFilter = true
       if (customerFilterType === 'LOYAL') matchesFilter = cust.totalVisits >= 5
@@ -1019,31 +1082,42 @@ const Dashboard = () => {
 
             {/* Data Dots & Tooltips */}
             {data.map((d, i) => {
-              const x = padding + (i / Math.max(data.length - 1, 1)) * (svgWidth - padding * 2)
-              const yOmzet = svgHeight - padding - (d.omzet / maxVal) * (svgHeight - padding * 2)
-              const dateLabel = d.date ? d.date.substring(5) : ''
               const labelInterval = Math.max(Math.ceil(data.length / 10), 1)
               const showLabel = i % labelInterval === 0 || i === data.length - 1
+              const x = padding + (i / Math.max(data.length - 1, 1)) * (svgWidth - padding * 2)
+              const yOmzet = svgHeight - padding - (d.omzet / maxVal) * (svgHeight - padding * 2)
+              const yExp = svgHeight - padding - (d.pengeluaran / maxVal) * (svgHeight - padding * 2)
+              const tooltipY = Math.max(5, Math.min(yOmzet, yExp) - 50) // <--- Deklarasikan di sini
+              const dateLabel = d.date ? d.date.substring(5) : ''
+
 
               return (
                 <g key={i} className="group cursor-pointer">
+                  {/*sensor transparan untuk mempermudah sentuhan (touch target) di mobile*/}
+                  <rect x={x - 8} y={Math.min(yOmzet, yExp) - 8} width="16" height={Math.abs(yOmzet - yExp) + 16} fill="transparent" />
                   {/* Omzet Dot */}
                   <circle cx={x} cy={yOmzet} r="5" fill="#10b981" className="transition-all group-hover:r-7 group-hover:fill-emerald-300" />
-                  
+                  {/*Exp Dot*/}
+                  <circle cx={x} cy={yExp} r="4" fill="#f43f5e" className="transition-all group-hover:r-6 group-hover:fill-rose-300" />
+                  {/*tool tip gabungan */}
+                  <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <rect x={x - 60} y={tooltipY} width="120" height="38" rx="6" fill="#0f172a" stroke="#475569" strokeWidth="2" />
+                    {/*teks omzet (hijau)*/}
+                    <text x={x} y={tooltipY + 10} fontSize="9" fill="#10b981" fontWeight="bold" textAnchor="middle">
+                      {formatRupiah(d.omzet)}
+                    </text>
+                    {/*teks pengeluaran (merah)*/}
+                    <text x={x} y={tooltipY + 30} fontSize="9" fill="#f43f5e" fontWeight="bold" textAnchor="middle">
+                      {formatRupiah(d.pengeluaran)}
+                    </text>
+                  </g>
+
                   {/* X Axis Label */}
                   {showLabel && (
                     <text x={x} y={svgHeight - 10} fontSize="8" fill="#94a3b8" textAnchor="middle" className="font-mono">
                       {dateLabel}
                     </text>
                   )}
-
-                  {/* Hover Tooltip Box */}
-                  <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                    <rect x={x - 50} y={yOmzet - 35} width="100" height="26" rx="6" fill="#0f172a" stroke="#10b981" strokeWidth="1" />
-                    <text x={x} y={yOmzet - 18} fontSize="9" fill="#34d399" fontWeight="bold" textAnchor="middle">
-                      {formatRupiah(d.omzet)}
-                    </text>
-                  </g>
                 </g>
               )
             })}
@@ -1119,7 +1193,7 @@ const Dashboard = () => {
             {/* Absolute Custom Date Popover */}
             {timeRange === 'custom' && showCustomCalendar && (
               <div className="absolute right-0 top-full mt-2 z-50">
-                <InteractiveCalendar 
+                <InteractiveCalendar
                   startDate={startDate}
                   endDate={endDate}
                   onChange={(start, end) => {
@@ -1144,14 +1218,13 @@ const Dashboard = () => {
       </div>
 
       {/* Main Tab Navigation */}
-      <div className="p-2 rounded-2xl grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 bg-slate-900/40 border border-slate-800/85 shadow-inner">
+      <div className="p-2 rounded-2xl grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-900/40 border border-slate-800/85 shadow-inner">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${
-            activeTab === 'overview'
-              ? 'bg-brand-emerald text-slate-950 shadow-lg shadow-brand-emerald/15 scale-[1.02]'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-          }`}
+          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${activeTab === 'overview'
+            ? 'bg-brand-emerald text-slate-950 shadow-lg shadow-brand-emerald/15 scale-[1.02]'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+            }`}
         >
           <PieChart size={15} />
           Overview
@@ -1159,11 +1232,10 @@ const Dashboard = () => {
 
         <button
           onClick={() => setActiveTab('cafe')}
-          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${
-            activeTab === 'cafe'
-              ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/15 scale-[1.02]'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-          }`}
+          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${activeTab === 'cafe'
+            ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/15 scale-[1.02]'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+            }`}
         >
           <Coffee size={15} />
           Performa Cafe ({cafeAnalytics.totalItems})
@@ -1171,11 +1243,10 @@ const Dashboard = () => {
 
         <button
           onClick={() => setActiveTab('carwash')}
-          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${
-            activeTab === 'carwash'
-              ? 'bg-brand-blue text-slate-950 shadow-lg shadow-brand-blue/15 scale-[1.02]'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-          }`}
+          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${activeTab === 'carwash'
+            ? 'bg-brand-blue text-slate-950 shadow-lg shadow-brand-blue/15 scale-[1.02]'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+            }`}
         >
           <Car size={15} />
           Performa Carwash ({carwashAnalytics.totalUnits})
@@ -1183,11 +1254,10 @@ const Dashboard = () => {
 
         <button
           onClick={() => setActiveTab('finance')}
-          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${
-            activeTab === 'finance'
-              ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/15 scale-[1.02]'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-          }`}
+          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${activeTab === 'finance'
+            ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/15 scale-[1.02]'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+            }`}
         >
           <TrendingUp size={15} />
           Performa Keuangan
@@ -1195,14 +1265,24 @@ const Dashboard = () => {
 
         <button
           onClick={() => setActiveTab('customers')}
-          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${
-            activeTab === 'customers'
-              ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/15 scale-[1.02]'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-          }`}
+          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${activeTab === 'customers'
+            ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/15 scale-[1.02]'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+            }`}
         >
           <Users size={15} />
           Laporan Customer ({customerReport.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reports')}
+          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all duration-300 ${activeTab === 'reports'
+            ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/15 scale-[1.02]'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+            }`}
+        >
+          <FileText size={15} />
+          Laporan Akuntansi
         </button>
       </div>
 
@@ -1293,7 +1373,7 @@ const Dashboard = () => {
                 <span className="text-xs text-slate-500 mb-1">{advancedKPIs.crossCount} dari {advancedKPIs.totalCarwashStruks} Mobil</span>
               </div>
             </div>
-            
+
             <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-brand-emerald/30 hover:border-brand-emerald/70 transition-all duration-300">
               <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">ARPU Gabungan (Rata-rata Pendapatan per Pengguna)</p>
               <div className="flex items-end gap-3">
@@ -1441,9 +1521,8 @@ const Dashboard = () => {
                     <div
                       key={idx}
                       onClick={() => catData.items.length > 0 && setSelectedExpenseDetail({ name: catName, items: catData.items })}
-                      className={`flex justify-between items-center p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition-all ${
-                        catData.items.length > 0 ? 'cursor-pointer hover:bg-slate-850 hover:scale-[1.01] hover:border-rose-500/30' : 'opacity-70'
-                      }`}
+                      className={`flex justify-between items-center p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition-all ${catData.items.length > 0 ? 'cursor-pointer hover:bg-slate-850 hover:scale-[1.01] hover:border-rose-500/30' : 'opacity-70'
+                        }`}
                     >
                       <span className="text-xs font-semibold text-slate-300">{catName}</span>
                       <span className="text-xs font-black text-rose-400">{formatRupiah(catData.amount)}</span>
@@ -1474,7 +1553,7 @@ const Dashboard = () => {
                 </button>
               )}
             </div>
-            
+
             <div className="overflow-x-auto rounded-xl border border-slate-800/60 bg-slate-950/20 max-h-[600px] overflow-y-auto">
               <table className="w-full min-w-[650px] text-left text-sm text-slate-300 border-collapse">
                 <thead>
@@ -1554,9 +1633,8 @@ const Dashboard = () => {
                   <div
                     key={idx}
                     onClick={() => catData.items.length > 0 && setSelectedExpenseDetail({ name: catName, items: catData.items })}
-                    className={`flex justify-between items-center p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition-all ${
-                      catData.items.length > 0 ? 'cursor-pointer hover:bg-slate-850 hover:scale-[1.01] hover:border-rose-500/30' : 'opacity-70'
-                    }`}
+                    className={`flex justify-between items-center p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition-all ${catData.items.length > 0 ? 'cursor-pointer hover:bg-slate-850 hover:scale-[1.01] hover:border-rose-500/30' : 'opacity-70'
+                      }`}
                   >
                     <span className="text-xs font-semibold text-slate-300">{catName}</span>
                     <span className="text-xs font-black text-rose-400">{formatRupiah(catData.amount)}</span>
@@ -1601,7 +1679,7 @@ const Dashboard = () => {
                 </button>
               )}
             </div>
-            
+
             <div className="overflow-x-auto rounded-xl border border-slate-800/60 bg-slate-950/20 max-h-[600px] overflow-y-auto">
               <table className="w-full min-w-[650px] text-left text-sm text-slate-300 border-collapse">
                 <thead>
@@ -1687,7 +1765,7 @@ const Dashboard = () => {
                 </button>
               )}
             </div>
-            
+
             <div className="overflow-x-auto rounded-xl border border-slate-800/60 bg-slate-950/20 max-h-[600px] overflow-y-auto">
               <table className="w-full min-w-[800px] text-left text-sm text-slate-300 border-collapse">
                 <thead>
@@ -1719,13 +1797,12 @@ const Dashboard = () => {
                           {item.tanggal ? item.tanggal.substring(0, 10) : '-'}
                         </td>
                         <td className="p-3.5">
-                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                            String(item.jenis).toLowerCase().includes('cafe') 
-                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                              : String(item.jenis).toLowerCase().includes('carwash')
-                                ? 'bg-brand-blue/10 text-brand-blue border border-brand-blue/20'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700'
-                          }`}>
+                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${String(item.jenis).toLowerCase().includes('cafe')
+                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            : String(item.jenis).toLowerCase().includes('carwash')
+                              ? 'bg-brand-blue/10 text-brand-blue border border-brand-blue/20'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            }`}>
                             {item.jenis || 'Pengeluaran'}
                           </span>
                         </td>
@@ -1758,7 +1835,7 @@ const Dashboard = () => {
               Tabel Histogram Frekuensi Kunjungan Kendaraan
             </h3>
             <p className="text-xs text-slate-400 mb-4">Distribusi jumlah mobil berdasarkan frekuensi kedatangan (Kunjungan Ke-N)</p>
-            
+
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-2 text-center">
               {Object.keys(visitHistogram).sort((a, b) => Number(a) - Number(b)).map(visitNum => (
                 <div key={visitNum} className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
@@ -1877,6 +1954,227 @@ const Dashboard = () => {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 6: LAPORAN AKUNTANSI KONSOLIDASI */}
+      {activeTab === 'reports' && (
+        <div className="space-y-6 animate-fade-in print:space-y-4">
+          {/* Controls Bar */}
+          <div className="flex justify-between items-center bg-slate-900/60 p-4 rounded-2xl border border-slate-800/80 shadow-md print:hidden flex-wrap gap-3">
+            <div>
+              <h3 className="font-bold text-sm text-white">Laporan Keuangan Konsolidasi</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5">Ekspor atau cetak laporan keuangan resmi berdasarkan standar EMKM</p>
+            </div>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-slate-950 font-bold rounded-xl shadow-lg transition-all text-xs"
+            >
+              <Printer size={14} />
+              Cetak Laporan (PDF)
+            </button>
+          </div>
+
+          {/* Printable Report Sheet */}
+          <div id="print-area" className="glass-panel p-8 rounded-2xl border border-slate-800 bg-slate-950/40 text-slate-200 print:bg-white print:text-black print:p-0 print:border-none print:shadow-none">
+
+            {/* Header Laporan */}
+            <div className="text-center border-b-2 border-slate-800 pb-6 mb-6 print:border-black print:pb-4 print:mb-4">
+              <h2 className="text-2xl font-black tracking-tight text-white print:text-black">JAYA BERSAMA CARWASH & CAFE</h2>
+              <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-semibold print:text-slate-600">Laporan Keuangan Konsolidasi (Segmen Usaha)</p>
+              <p className="text-xs text-cyan-400 font-mono mt-1 font-bold print:text-slate-700">
+                Periode: {timeRange === 'all' ? 'Seluruh Periode' : `${parseDateSafe(startDate || '2026-07-01').toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} s/d ${parseDateSafe(endDate || new Date().toLocaleDateString('en-CA')).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}`}
+              </p>
+              <span className="text-[10px] text-slate-500 block mt-2 print:text-slate-500 font-medium">Mata Uang: Rupiah (IDR)</span>
+            </div>
+
+            {/* Bagian 1: Laporan Laba Rugi Segmen */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-extrabold text-white border-l-4 border-rose-500 pl-2.5 uppercase tracking-wider print:text-black print:border-black">
+                I. Laporan Laba Rugi Segmen (Consolidated Profit & Loss)
+              </h3>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase print:border-black print:text-black">
+                      <th className="py-2.5">Deskripsi Akun</th>
+                      <th className="py-2.5 text-right pr-6">Segmen Cafe</th>
+                      <th className="py-2.5 text-right pr-6">Segmen Carwash</th>
+                      <th className="py-2.5 text-right font-black">Konsolidasi (Total)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/40 print:divide-slate-200">
+                    {/* Pendapatan */}
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 font-semibold text-slate-200 print:text-black">PENDAPATAN USAHA</td>
+                      <td className="py-3 text-right pr-6 text-emerald-400 font-bold print:text-black">{formatRupiah(reportsAnalytics.cafeRevenue)}</td>
+                      <td className="py-3 text-right pr-6 text-emerald-400 font-bold print:text-black">{formatRupiah(reportsAnalytics.carwashRevenue)}</td>
+                      <td className="py-3 text-right font-bold text-emerald-400 print:text-black">{formatRupiah(reportsAnalytics.consolidatedRevenue)}</td>
+                    </tr>
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 pl-4 text-slate-400 print:text-slate-600">Pendapatan Lain-lain (Manual)</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right text-slate-300 print:text-black">{formatRupiah(reportsAnalytics.otherIncome)}</td>
+                    </tr>
+                    <tr className="bg-slate-900/20 font-bold border-y border-slate-800/80 print:bg-slate-100 print:border-black">
+                      <td className="py-3 text-white print:text-black">TOTAL PENDAPATAN</td>
+                      <td className="py-3 text-right pr-6 print:text-black">{formatRupiah(reportsAnalytics.cafeRevenue)}</td>
+                      <td className="py-3 text-right pr-6 print:text-black">{formatRupiah(reportsAnalytics.carwashRevenue)}</td>
+                      <td className="py-3 text-right font-black print:text-black">{formatRupiah(reportsAnalytics.consolidatedRevenue + reportsAnalytics.otherIncome)}</td>
+                    </tr>
+
+                    {/* HPP */}
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 font-semibold text-slate-200 print:text-black">HARGA POKOK PENJUALAN (HPP)</td>
+                      <td className="py-3 text-right pr-6 text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.cafeHpp)})</td>
+                      <td className="py-3 text-right pr-6 text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.carwashHpp)})</td>
+                      <td className="py-3 text-right text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.consolidatedHpp)})</td>
+                    </tr>
+                    <tr className="bg-slate-900/30 font-bold border-y border-slate-800/60 print:bg-slate-50 print:border-black">
+                      <td className="py-3 text-white print:text-black">LABA KOTOR (GROSS PROFIT)</td>
+                      <td className="py-3 text-right pr-6 text-emerald-400 print:text-black">{formatRupiah(reportsAnalytics.cafeGrossProfit)}</td>
+                      <td className="py-3 text-right pr-6 text-emerald-400 print:text-black">{formatRupiah(reportsAnalytics.carwashGrossProfit)}</td>
+                      <td className="py-3 text-right font-black text-emerald-400 print:text-black">{formatRupiah(reportsAnalytics.consolidatedGrossProfit)}</td>
+                    </tr>
+
+                    {/* Beban Operasional */}
+                    <tr>
+                      <td className="py-3 font-semibold text-slate-200 print:text-black" colSpan={3}>BEBAN OPERASIONAL KONSOLIDASI</td>
+                      <td className="py-3 text-right pr-6 font-bold text-slate-500">-</td>
+                    </tr>
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 pl-4 text-slate-400 print:text-slate-600">Beban Gaji Karyawan (Gaji Bersih + Casbon)</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.totalBebanGaji)})</td>
+                    </tr>
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 pl-4 text-slate-400 print:text-slate-600">Beban Bahan Baku (Restok Gudang)</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.expBahanBakuRestok)})</td>
+                    </tr>
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 pl-4 text-slate-400 print:text-slate-600">Beban Operasional Murni (Listrik, Air, Gas, Sabun, dll)</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.expOperasionalMurni)})</td>
+                    </tr>
+                    <tr className="hover:bg-slate-900/10 print:hover:bg-transparent">
+                      <td className="py-3 pl-4 text-slate-400 print:text-slate-600">Beban Pengeluaran Lain-lain</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.expLainLain)})</td>
+                    </tr>
+                    <tr className="bg-slate-900/20 font-bold border-y border-slate-800/80 print:bg-slate-100 print:border-black">
+                      <td className="py-3 text-white print:text-black">TOTAL BEBAN OPERASIONAL</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right pr-6 text-slate-500">-</td>
+                      <td className="py-3 text-right font-black text-rose-400 print:text-black">({formatRupiah(reportsAnalytics.totalOperatingExpenses)})</td>
+                    </tr>
+
+                    {/* Laba Bersih */}
+                    <tr className="bg-rose-500/10 border-y-2 border-slate-700 font-extrabold text-sm print:bg-slate-200 print:border-black print:text-black">
+                      <td className="py-3.5 text-white print:text-black">LABA BERSIH BERJALAN (NET PROFIT)</td>
+                      <td className="py-3.5 text-right pr-6 text-slate-400">-</td>
+                      <td className="py-3.5 text-right pr-6 text-slate-400">-</td>
+                      <td className={`py-3.5 text-right font-black text-sm ${reportsAnalytics.consolidatedNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'} print:text-black`}>
+                        {formatRupiah(reportsAnalytics.consolidatedNetProfit)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Bagian 2: Laporan Posisi Kas */}
+            <div className="space-y-4 mt-8">
+              <h3 className="text-sm font-extrabold text-white border-l-4 border-rose-500 pl-2.5 uppercase tracking-wider print:text-black print:border-black">
+                II. Laporan Rekonsiliasi & Posisi Saldo Kas (Cash Position)
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3 print:gap-2">
+                <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center print:border-black print:bg-transparent">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold print:text-black">Saldo Tunai (Laci Cash)</span>
+                  <h4 className="text-lg font-black text-white mt-1 print:text-black">{formatRupiah(posBalances.cash)}</h4>
+                </div>
+                <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center print:border-black print:bg-transparent">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold print:text-black">Saldo Rekening Y</span>
+                  <h4 className="text-lg font-black text-white mt-1 print:text-black">{formatRupiah(posBalances.rekY)}</h4>
+                </div>
+                <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center print:border-black print:bg-transparent">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold print:text-black">Saldo Rekening N</span>
+                  <h4 className="text-lg font-black text-white mt-1 print:text-black">{formatRupiah(posBalances.rekN)}</h4>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50 flex justify-between items-center text-xs font-bold print:border-black print:bg-slate-100">
+                <span className="text-slate-400 print:text-black">TOTAL KAS BERSIH PERUSAHAAN</span>
+                <span className="text-brand-emerald text-sm font-black print:text-black">
+                  {formatRupiah(posBalances.cash + posBalances.rekY + posBalances.rekN)}
+                </span>
+              </div>
+            </div>
+
+            {/* Bagian 3: Catatan Penunjang Laporan Keuangan */}
+            <div className="space-y-4 mt-8 print:mt-6">
+              <h3 className="text-sm font-extrabold text-white border-l-4 border-rose-500 pl-2.5 uppercase tracking-wider print:text-black print:border-black">
+                III. Catatan Penunjang Laporan (Usaha & Metrik)
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:grid-cols-2 print:gap-4 text-xs">
+                {/* Metrik Cafe */}
+                <div className="p-4 rounded-xl border border-slate-850 bg-slate-900/20 space-y-3 print:border-black print:bg-transparent">
+                  <h4 className="font-bold text-amber-500 uppercase tracking-wide print:text-black">Segmen Cafe</h4>
+                  <ul className="space-y-1.5 text-slate-350 print:text-black">
+                    <li className="flex justify-between">
+                      <span className="text-slate-500 print:text-slate-600">Total Produk Terjual:</span>
+                      <span className="font-bold text-white print:text-black">{cafeAnalytics.totalItems} unit</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-500 print:text-slate-600">Rata-rata Penjualan Harian:</span>
+                      <span className="font-bold text-white print:text-black">{cafeAnalytics.avgItemsPerDay} unit</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-500 print:text-slate-600">Rata-rata Nilai Struk (AOV):</span>
+                      <span className="font-bold text-white print:text-black">{formatRupiah(cafeAnalytics.aov)}</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Metrik Carwash */}
+                <div className="p-4 rounded-xl border border-slate-850 bg-slate-900/20 space-y-3 print:border-black print:bg-transparent">
+                  <h4 className="font-bold text-brand-blue uppercase tracking-wide print:text-black">Segmen Carwash</h4>
+                  <ul className="space-y-1.5 text-slate-350 print:text-black">
+                    <li className="flex justify-between">
+                      <span className="text-slate-500 print:text-slate-600">Total Kendaraan Dicuci:</span>
+                      <span className="font-bold text-white print:text-black">{carwashAnalytics.totalUnits} unit</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-500 print:text-slate-600">Rata-rata Cuci Harian:</span>
+                      <span className="font-bold text-white print:text-black">{carwashAnalytics.avgCarsPerDay} unit</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-500 print:text-slate-600">Pengeluaran Komisi Pencuci:</span>
+                      <span className="font-bold text-white print:text-black">{formatRupiah(reportsAnalytics.carwashHpp)}</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Lembar Laporan Cetak */}
+            <div className="hidden print:flex justify-between items-center text-[10px] text-slate-500 border-t border-slate-200 mt-12 pt-4">
+              <span>Dicetak otomatis oleh Jaya Bersama POS System</span>
+              <span>Tanggal Cetak: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })} WIB</span>
+              <div className="flex flex-col items-center gap-1">
+                <span>Divalidasi Oleh:</span>
+                <span className="font-bold mt-8 text-black border-t border-black px-6 text-center">Owner / Manajemen</span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

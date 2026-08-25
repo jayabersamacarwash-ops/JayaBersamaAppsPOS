@@ -18,6 +18,7 @@ import {
   Users,
   Calendar
 } from 'lucide-react'
+import { formatRupiah } from '../utils/helpers'
 import InteractiveCalendar from '../components/InteractiveCalendar'
 
 const Admin = () => {
@@ -26,6 +27,41 @@ const Admin = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Custom Alert / Confirm Modal State
+  const [customAlert, setCustomAlert] = useState(null)
+
+  const showAlert = (message, title = 'Informasi') => {
+    return new Promise((resolve) => {
+      setCustomAlert({
+        title,
+        message,
+        type: 'alert',
+        onConfirm: () => {
+          setCustomAlert(null)
+          resolve(true)
+        }
+      })
+    })
+  }
+
+  const showConfirm = (message, title = 'Konfirmasi') => {
+    return new Promise((resolve) => {
+      setCustomAlert({
+        title,
+        message,
+        type: 'confirm',
+        onConfirm: () => {
+          setCustomAlert(null)
+          resolve(true)
+        },
+        onCancel: () => {
+          setCustomAlert(null)
+          resolve(false)
+        }
+      })
+    })
+  }
 
   // Database Data
   const [cashiers, setCashiers] = useState([])
@@ -37,42 +73,11 @@ const Admin = () => {
   const [balances, setBalances] = useState({ cash: 0, rekY: 0, rekN: 0 })
   const [targetBalances, setTargetBalances] = useState({ cash: '', rekY: '', rekN: '' })
 
-  // State Laporan Gaji Cuci
-  const [wagesStartDate, setWagesStartDate] = useState(() => {
-    const d = new Date()
-    if (d.getDate() >= 16) {
-      d.setDate(16)
-    } else {
-      d.setMonth(d.getMonth() - 1)
-      d.setDate(16)
-    }
-    return d.toLocaleDateString('en-CA') // Format YYYY-MM-DD waktu lokal
-  })
-  const [wagesEndDate, setWagesEndDate] = useState(() => {
-    return new Date().toLocaleDateString('en-CA') // Format YYYY-MM-DD waktu lokal
-  })
-  const [carwashWagesList, setCarwashWagesList] = useState([])
-  const [selectedWageWorker, setSelectedWageWorker] = useState(null)
-  const [showWagesCalendar, setShowWagesCalendar] = useState(false)
-  
-  // State Karyawan Cuci
-  const [karyawanCuciList, setKaryawanCuciList] = useState([])
-  const [newKaryawanCuci, setNewKaryawanCuci] = useState('')
-  const [selectedJobForCrosscheck, setSelectedJobForCrosscheck] = useState(null)
-
   // State Form Kasir
   const [newCashier, setNewCashier] = useState('')
   
   // State Form Metode Pembayaran
   const [newPayment, setNewPayment] = useState('')
-
-  // State Form Registrasi Staff
-  const [staffForm, setStaffForm] = useState({
-    email: '',
-    password: '',
-    nama: '',
-    role: 'Kasir'
-  })
 
   // State Form Menu & Resep
   const [showMenuModal, setShowMenuModal] = useState(false)
@@ -145,21 +150,11 @@ const Admin = () => {
       }
       setBalances({ cash: cashVal, rekY: rekYVal, rekN: rekNVal })
 
-      // Fetch Karyawan Cuci
-      let realKaryawan = []
-      try {
-        const { data: kc_cuci } = await supabase.from('karyawan_cuci').select('*').order('nama', { ascending: true })
-        realKaryawan = kc_cuci || []
-      } catch (e) {
-        console.warn('karyawan_cuci read error:', e)
-      }
-
       setCashiers(realCashiers)
       setPaymentMethods(realPayments)
       setMenuItems(realMenus)
       setStokBahan(realStok)
       setResepList(realResep)
-      setKaryawanCuciList(realKaryawan)
 
     } catch (err) {
       console.error('Error loading admin data:', err)
@@ -172,154 +167,7 @@ const Admin = () => {
     loadAdminData()
   }, [])
 
-  const fetchCarwashWages = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const { data, error: err } = await supabase
-        .from('carwash')
-        .select(`
-          id_transaksi,
-          kehadiran,
-          variant,
-          ukuran,
-          paket,
-          anggota_1,
-          anggota_2,
-          plat,
-          harga,
-          harga_cuci,
-          harga_paket,
-          harga_custom,
-          gaji_pencuci,
-          status,
-          created_at,
-          tanggal
-        `)
-        .neq('status', 'Batal')
-        .gte('tanggal', wagesStartDate)
-        .lte('tanggal', wagesEndDate)
-      
-      if (err) throw err
-      
-      setCarwashWagesList(data || [])
-    } catch (err) {
-      console.error('Error fetching carwash wages:', err)
-      setError('Gagal memuat data upah carwash.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  useEffect(() => {
-    if (activeTab === 'wages') {
-      fetchCarwashWages()
-    }
-  }, [activeTab, wagesStartDate, wagesEndDate])
-
-  const getWagesSummary = () => {
-    const summary = {}
-    const activeWorkers = karyawanCuciList.length > 0 
-      ? karyawanCuciList.map(k => k.nama.toUpperCase().trim()) 
-      : ['ANGGA', 'FERRY', 'RAHMAN', 'FAISAL', 'BAGUS', 'VICKY', 'NOPAL', 'EZA']
-    
-    activeWorkers.forEach(w => {
-      summary[w] = { name: w, totalCars: 0, totalWage: 0, details: [] }
-    })
-
-    carwashWagesList.forEach(item => {
-      let hargaCuci = parseFloat(item.harga_cuci) || 0
-      let hargaPaket = parseFloat(item.harga_paket) || 0
-      
-      // Fallback untuk data lama/impor yang tidak terpecah harga cuci & paketan-nya
-      if (hargaCuci === 0 && hargaPaket === 0) {
-        if (!item.paket || item.paket.trim() === "") {
-          hargaCuci = parseFloat(item.harga) || 0
-        } else {
-          const size = item.ukuran || 'Large'
-          const variant = item.variant || 'Regular'
-          
-          const basicWashPrices = {
-            Small: { Regular: 50000, 'Body only': 35000 },
-            Medium: { Regular: 55000, 'Body only': 40000 },
-            Large: { Regular: 60000, 'Body only': 45000 },
-            'Extra Large': { Regular: 80000, 'Body only': 80000 },
-            Custom: { Regular: 80000, 'Body only': 80000 }
-          }
-          
-          const basicSize = basicWashPrices[size] ? size : 'Large'
-          const basicVar = variant === 'Body only' ? 'Body only' : 'Regular'
-          hargaCuci = basicWashPrices[basicSize][basicVar]
-          hargaPaket = Math.max(0, (parseFloat(item.harga) || 0) - hargaCuci)
-        }
-      }
-      
-      const w1 = item.anggota_1 ? item.anggota_1.trim().toUpperCase() : ''
-      const w2 = item.anggota_2 ? item.anggota_2.trim().toUpperCase() : ''
-      
-      // Split jika anggota_2 diisi nama yang berbeda dengan anggota_1
-      const isSplit = w2 !== '' && w2 !== w1
-      
-      // Hitung gaji cuci per orang (1/3 harga cuci, lalu dibagi 2 jika split, dibulatkan ke kelipatan 1000 ke bawah)
-      const washWagePerPerson = isSplit 
-        ? Math.floor((hargaCuci / 3 / 2) / 1000) * 1000 
-        : Math.floor((hargaCuci / 3) / 1000) * 1000
-      
-      // Hitung gaji paket per orang (1/2 harga paket, lalu dibagi 2 jika split, dibulatkan ke kelipatan 1000 ke bawah)
-      const packageWagePerPerson = hargaPaket > 0 
-        ? (isSplit 
-            ? Math.floor((hargaPaket / 2 / 2) / 1000) * 1000 
-            : Math.floor((hargaPaket / 2) / 1000) * 1000)
-        : 0
-      
-      const share = washWagePerPerson + packageWagePerPerson
-
-      if (w1) {
-        if (!summary[w1]) {
-          summary[w1] = { name: w1, totalCars: 0, totalWage: 0, details: [] }
-        }
-        summary[w1].totalCars += 1
-        summary[w1].totalWage += share
-        summary[w1].details.push({
-          id: item.id_transaksi,
-          tanggal: item.created_at,
-          platNomor: item.plat,
-          paket: item.paket,
-          variant: item.variant,
-          ukuran: item.ukuran,
-          totalHarga: item.harga,
-          shareWage: share,
-          split: isSplit ? 'Split 50%' : 'Solo 100%',
-          rawItem: item
-        })
-      }
-
-      if (isSplit && w2) {
-        if (!summary[w2]) {
-          summary[w2] = { name: w2, totalCars: 0, totalWage: 0, details: [] }
-        }
-        summary[w2].totalCars += 1
-        summary[w2].totalWage += share
-        summary[w2].details.push({
-          id: item.id_transaksi,
-          tanggal: item.created_at,
-          platNomor: item.plat,
-          paket: item.paket,
-          variant: item.variant,
-          ukuran: item.ukuran,
-          totalHarga: item.harga,
-          shareWage: share,
-          split: isSplit ? 'Split 50%' : 'Solo 100%',
-          rawItem: item
-        })
-      }
-    })
-
-    return Object.values(summary).sort((a, b) => b.totalWage - a.totalWage)
-  }
-
-  const wagesSummary = getWagesSummary()
-  const selectedWorkerDetails = selectedWageWorker ? wagesSummary.find(w => w.name === selectedWageWorker) : null
 
   // 1. Kasir & Metode Bayar Handlers
   const handleAddCashier = async (e) => {
@@ -415,15 +263,16 @@ const Admin = () => {
   }
 
   const handleDeleteIngredient = async (id) => {
-    if (!window.confirm('Yakin ingin menghapus bahan baku ini?')) return
+    const confirmed = await showConfirm('Yakin ingin menghapus bahan baku ini?', 'Hapus Bahan Baku')
+    if (!confirmed) return
     try {
       const { error } = await supabase.from('stok_barang').delete().eq('id_bahan_baku', id)
       if (error) throw error
-      alert('Berhasil dihapus.')
+      await showAlert('Berhasil dihapus.', 'Sukses')
       loadAdminData()
     } catch (err) {
       console.error(err)
-      alert('Gagal hapus: ' + err.message)
+      await showAlert('Gagal hapus: ' + err.message, 'Error')
     }
   }
 
@@ -431,7 +280,10 @@ const Admin = () => {
     e.preventDefault()
     if (!opnameIngredient) return
     const fisik = parseFloat(stokFisik)
-    if (isNaN(fisik)) return alert('Masukkan angka stok fisik yang valid')
+    if (isNaN(fisik)) {
+      await showAlert('Masukkan angka stok fisik yang valid', 'Input Tidak Valid')
+      return
+    }
     
     // In a full implementation, you would save this to a ledger or history.
     // For now, we update the main stock to match the physical stock to correct the leakage.
@@ -442,45 +294,17 @@ const Admin = () => {
       }).eq('id_bahan_baku', opnameIngredient.id_bahan_baku)
       if (error) throw error
       
-      alert('Stok fisik berhasil disimpan dan diupdate di sistem.')
+      await showAlert('Stok fisik berhasil disimpan dan diupdate di sistem.', 'Sukses')
       setOpnameIngredient(null)
       setStokFisik('')
       loadAdminData()
     } catch (err) {
       console.error(err)
-      alert('Gagal update opname: ' + err.message)
+      await showAlert('Gagal update opname: ' + err.message, 'Error')
     }
   }
 
-  // 3. Registrasi Staff Baru Handler
-  const handleRegisterStaff = async (e) => {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
-    if (!staffForm.email || !staffForm.password || !staffForm.nama) {
-      return setError('Semua form wajib diisi.')
-    }
 
-    try {
-      const res = await registerKasir(staffForm.email, staffForm.password, staffForm.nama, staffForm.role)
-      if (!res.success) throw new Error(res.error)
-
-      // Auto-insert nama kasir ke tabel kasir agar bisa digunakan di transaksi struk
-      if (staffForm.role === 'Kasir') {
-        const { error: kasirErr } = await supabase
-          .from('kasir')
-          .insert({ nama: staffForm.nama.trim().toUpperCase(), is_active: true })
-        if (kasirErr) {
-          console.warn('Gagal otomatis menambahkan ke tabel kasir:', kasirErr)
-        }
-      }
-
-      setSuccess(`Staf baru ${staffForm.nama} (${staffForm.role}) berhasil didaftarkan!`)
-      setStaffForm({ email: '', password: '', nama: '', role: 'Kasir' })
-    } catch (err) {
-      setError(err.message || 'Gagal mendaftarkan staff.')
-    }
-  }
 
   // 4. Menu & Resep Handlers
   const handleAddRecipeRow = () => {
@@ -556,6 +380,15 @@ const Admin = () => {
     if (!menuForm.nama_menu) return setError('Nama menu wajib diisi.')
     if (parseFloat(menuForm.harga) < 0) return setError('Harga menu tidak boleh negatif.')
 
+    // Cek duplikasi bahan baku dalam resep
+    const bahanSet = new Set()
+    for (const r of menuRecipe) {
+      if (bahanSet.has(r.nama_bahan)) {
+        return setError(`Bahan baku "${r.nama_bahan}" tidak boleh diinput lebih dari sekali dalam satu resep menu.`)
+      }
+      bahanSet.add(r.nama_bahan)
+    }
+
     try {
       // 1. Simpan Menu (Insert / Update)
       if (isEditingMenu) {
@@ -578,7 +411,7 @@ const Admin = () => {
         await supabase
           .from('resep')
           .delete()
-          .eq('nama_menu', menuForm.nama_menu)
+          .eq('id_menu', menuForm.id_menu)
       } else {
         // Insert new menu
         const { error: menuErr } = await supabase
@@ -629,7 +462,8 @@ const Admin = () => {
   }
 
   const handleDeleteMenu = async (menuName) => {
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus menu "${menuName}"? Tindakan ini akan menghapus data resep yang melekat.`)) return
+    const confirmed = await showConfirm(`Apakah Anda yakin ingin menghapus menu "${menuName}"? Tindakan ini akan menghapus data resep yang melekat.`, 'Hapus Menu')
+    if (!confirmed) return
     try {
       const { error } = await supabase
         .from('daftar_harga_menu')
@@ -735,60 +569,8 @@ const Admin = () => {
     }
   }
 
-  const handleAddKaryawanCuci = async (e) => {
-    e.preventDefault()
-    if (!newKaryawanCuci.trim()) return
-    setLoading(true)
-    setError('')
-    setSuccess('')
-    try {
-      const { error: err } = await supabase
-        .from('karyawan_cuci')
-        .insert({ nama: newKaryawanCuci.trim().toUpperCase() })
 
-      if (err) throw err
-      
-      setSuccess(`Karyawan "${newKaryawanCuci.trim().toUpperCase()}" berhasil ditambahkan!`)
-      setNewKaryawanCuci('')
-      await loadAdminData()
-    } catch (err) {
-      console.error('Error adding karyawan cuci:', err)
-      setError(err.message || 'Gagal menambahkan karyawan cuci.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  const handleDeleteKaryawanCuci = async (id, name) => {
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus karyawan "${name}"?`)) return
-    setLoading(true)
-    setError('')
-    setSuccess('')
-    try {
-      const { error: err } = await supabase
-        .from('karyawan_cuci')
-        .delete()
-        .eq('id', id)
-
-      if (err) throw err
-
-      setSuccess(`Karyawan "${name}" berhasil dihapus!`)
-      await loadAdminData()
-    } catch (err) {
-      console.error('Error deleting karyawan cuci:', err)
-      setError(err.message || 'Gagal menghapus karyawan cuci.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const formatRupiah = (val) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(val)
-  }
 
   return (
     <div className="p-6 pb-24 md:pb-6 space-y-6 max-w-7xl mx-auto">
@@ -846,15 +628,6 @@ const Admin = () => {
           Kasir & Metode Bayar
         </button>
         <button
-          onClick={() => setActiveTab('staff')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${
-            activeTab === 'staff' ? 'bg-brand-blue text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <UserPlus size={14} />
-          Daftar Staf Baru
-        </button>
-        <button
           onClick={() => setActiveTab('calibration')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${
             activeTab === 'calibration' ? 'bg-brand-blue text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'
@@ -862,27 +635,6 @@ const Admin = () => {
         >
           <Settings size={14} />
           Kalibrasi Saldo
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('wages')
-            setSelectedWageWorker(null)
-          }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${
-            activeTab === 'wages' ? 'bg-brand-blue text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <DollarSign size={14} />
-          Laporan Gaji Cuci
-        </button>
-        <button
-          onClick={() => setActiveTab('crew')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${
-            activeTab === 'crew' ? 'bg-brand-blue text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Users size={14} />
-          Karyawan Cuci
         </button>
       </div>
 
@@ -1141,83 +893,7 @@ const Admin = () => {
         </div>
       )}
 
-      {/* CONTENT TAB 4: Registrasi Staff */}
-      {activeTab === 'staff' && (
-        <div className="max-w-xl mx-auto glass-panel p-6 rounded-2xl border border-slate-800/80 space-y-6">
-          <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <UserPlus className="text-brand-blue" />
-              Daftarkan Staf Baru
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">Buat kredensial login (Email & Password) untuk kasir baru Anda</p>
-          </div>
 
-          <form onSubmit={handleRegisterStaff} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Nama Lengkap Staf
-              </label>
-              <input
-                type="text"
-                placeholder="Ketik nama (misal: Alexa Syafa)"
-                value={staffForm.nama}
-                onChange={(e) => setStaffForm(prev => ({ ...prev, nama: e.target.value }))}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Username Login
-              </label>
-              <input
-                type="text"
-                placeholder="Masukkan username (tanpa spasi)..."
-                value={staffForm.email}
-                onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Kata Sandi
-              </label>
-              <input
-                type="password"
-                placeholder="Minimal 6 karakter"
-                value={staffForm.password}
-                onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Peran Hak Akses (Role)
-              </label>
-              <select
-                value={staffForm.role}
-                onChange={(e) => setStaffForm(prev => ({ ...prev, role: e.target.value }))}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
-              >
-                <option value="Kasir">Kasir (Akses Terbatas Transaksi)</option>
-                <option value="Owner">Owner (Akses Penuh)</option>
-              </select>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-2.5 bg-brand-blue hover:bg-cyan-500 active:bg-cyan-600 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-blue/20 transition-all text-sm mt-2"
-            >
-              Registrasikan Akun Staf
-            </button>
-          </form>
-        </div>
-      )}
 
       {/* CONTENT TAB 5: Kalibrasi Saldo */}
       {activeTab === 'calibration' && (
@@ -1284,338 +960,6 @@ const Admin = () => {
               {loading ? 'Menyimpan Kalibrasi...' : 'Simpan & Sesuaikan Saldo'}
             </button>
           </form>
-        </div>
-      )}
-
-      {/* CONTENT TAB 6: Laporan Gaji Cuci */}
-      {activeTab === 'wages' && (
-        <div className="space-y-6">
-          <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <DollarSign className="text-brand-blue" size={20} />
-                  <span>Laporan Gaji Karyawan Cuci Mobil</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">Akumulasi upah karyawan cuci dari transaksi berstatus Selesai</p>
-              </div>
-
-              {/* Date Filters with InteractiveCalendar */}
-              <div className="relative flex items-center text-xs">
-                <button
-                  type="button"
-                  onClick={() => setShowWagesCalendar(!showWagesCalendar)}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-350 hover:text-white rounded-xl font-bold transition-all text-xs"
-                >
-                  <Calendar size={14} className="text-brand-blue" />
-                  <span>Periode Gaji: {wagesStartDate || 'Mulai'} s/d {wagesEndDate || 'Selesai'}</span>
-                </button>
-
-                {showWagesCalendar && (
-                  <div className="absolute right-0 top-full mt-2 z-50">
-                    <InteractiveCalendar
-                      startDate={wagesStartDate}
-                      endDate={wagesEndDate}
-                      onChange={(start, end) => {
-                        setWagesStartDate(start)
-                        setWagesEndDate(end)
-                      }}
-                      onClose={() => setShowWagesCalendar(false)}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Main Wages Summary Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* List Summary Karyawan (2/3 width) */}
-              <div className="lg:col-span-2 space-y-4">
-                <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/40">
-                  <table className="w-full min-w-[500px] text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-500 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50">
-                        <th className="p-4">Nama Pencuci</th>
-                        <th className="p-4 text-center">Jumlah Cuci (Mobil)</th>
-                        <th className="p-4 text-right">Total Upah (Rp)</th>
-                        <th className="p-4 text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-850">
-                      {wagesSummary.map((item) => (
-                        <tr 
-                          key={item.name} 
-                          className={`hover:bg-slate-800/10 transition-colors ${
-                            selectedWageWorker === item.name ? 'bg-brand-blue/5' : ''
-                          }`}
-                        >
-                          <td className="p-4 font-bold text-white text-sm">{item.name}</td>
-                          <td className="p-4 text-center font-bold text-slate-300 text-sm font-mono">{item.totalCars}</td>
-                          <td className="p-4 text-right font-black text-brand-emerald text-sm font-mono">{formatRupiah(item.totalWage)}</td>
-                          <td className="p-4 text-center">
-                            <button
-                              onClick={() => setSelectedWageWorker(item.name)}
-                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-brand-blue font-bold rounded-lg text-[10px] transition-colors"
-                            >
-                              Detail Riwayat
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Sidebar Detail Riwayat Worker (1/3 width) */}
-              <div className="glass-panel p-5 rounded-xl border border-slate-850 space-y-4 h-fit max-h-[70vh] flex flex-col justify-between overflow-hidden">
-                {!selectedWageWorker ? (
-                  <div className="py-12 flex flex-col items-center justify-center text-slate-600 text-center">
-                    <DollarSign size={36} className="mb-2 text-slate-700" />
-                    <p className="text-xs font-bold uppercase tracking-wider">Pilih Karyawan</p>
-                    <p className="text-[10px] text-slate-700 mt-1 max-w-[200px]">Klik tombol "Detail Riwayat" di sebelah nama pencuci untuk melihat rincian pekerjaan mereka</p>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col min-h-0 space-y-4">
-                    <div className="border-b border-slate-800 pb-3 flex justify-between items-center shrink-0">
-                      <div>
-                        <h4 className="font-extrabold text-sm text-white">{selectedWageWorker}</h4>
-                        <p className="text-[10px] text-slate-500">Rincian upah periode terpilih</p>
-                      </div>
-                      <button 
-                        onClick={() => setSelectedWageWorker(null)}
-                        className="text-slate-500 hover:text-slate-300 text-xs font-bold"
-                      >
-                        Tutup
-                      </button>
-                    </div>
-
-                    {/* Info Card */}
-                    <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-slate-900/60 border border-slate-850 text-xs shrink-0">
-                      <div>
-                        <span className="text-[9px] uppercase tracking-wider text-slate-500 block font-semibold">Total Mobil</span>
-                        <span className="text-sm font-bold text-slate-200 font-mono">{selectedWorkerDetails?.totalCars || 0}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] uppercase tracking-wider text-slate-500 block font-semibold">Total Upah</span>
-                        <span className="text-sm font-black text-brand-emerald font-mono">
-                          {formatRupiah(selectedWorkerDetails?.totalWage || 0)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Drilldown List */}
-                    <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                      {selectedWorkerDetails?.details.length === 0 ? (
-                        <p className="text-[10px] text-slate-600 text-center py-6">Tidak ada riwayat pekerjaan.</p>
-                      ) : (
-                        selectedWorkerDetails?.details.map((job) => {
-                          const dateObj = new Date(job.tanggal)
-                          const timeStr = dateObj.toLocaleDateString('id-ID', {
-                            day: 'numeric',
-                            month: 'short'
-                          }) + ' - ' + dateObj.toLocaleTimeString('id-ID', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
-
-                          return (
-                            <div 
-                              key={job.id} 
-                              onClick={() => setSelectedJobForCrosscheck(job)}
-                              className="p-3 rounded-lg bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/80 hover:border-brand-blue/30 active:scale-[0.98] transition-all cursor-pointer space-y-1.5"
-                              title="Klik untuk detail mobil (crosschecking)"
-                            >
-                              <div className="flex justify-between items-center text-[10px] font-mono">
-                                <span className="font-bold text-brand-blue uppercase">{job.platNomor || 'PLAT KOSONG'}</span>
-                                <span className="text-slate-500">{timeStr}</span>
-                              </div>
-                              <div className="text-[11px] text-slate-300 font-semibold truncate">
-                                {job.paket} ({job.variant} • {job.ukuran})
-                              </div>
-                              <div className="flex justify-between items-center text-[10px] pt-1.5 border-t border-slate-850/50 text-slate-400">
-                                <span>Porsi: <span className="font-bold text-slate-300">{job.split}</span></span>
-                                <span className="font-extrabold text-brand-emerald">{formatRupiah(job.shareWage)}</span>
-                              </div>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CONTENT TAB 7: Daftar Karyawan Cuci */}
-      {activeTab === 'crew' && (
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 max-w-4xl mx-auto space-y-6 animate-fade-in">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Users className="text-brand-blue" size={20} />
-                <span>Daftar Karyawan Cuci Mobil</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Kelola kru cuci mobil yang aktif. Daftar ini digunakan sebagai referensi pencucian di Kasir POS.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Form Tambah Karyawan */}
-            <div className="glass-panel p-5 rounded-xl border border-slate-850 h-fit space-y-4">
-              <h4 className="font-bold text-sm text-white">Tambah Karyawan Baru</h4>
-              <form onSubmit={handleAddKaryawanCuci} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                    Nama Karyawan (Capital)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: RIO"
-                    value={newKaryawanCuci}
-                    onChange={(e) => setNewKaryawanCuci(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-blue font-bold uppercase font-sans tracking-wide"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 bg-brand-blue hover:bg-cyan-500 active:scale-95 text-slate-950 font-bold rounded-lg text-xs transition-all shadow-md shadow-brand-blue/15"
-                >
-                  Tambah Karyawan
-                </button>
-              </form>
-            </div>
-
-            {/* List Karyawan */}
-            <div className="md:col-span-2 overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/40">
-              <table className="w-full min-w-[500px] text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-500 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50">
-                    <th className="p-4">Nama Karyawan</th>
-                    <th className="p-4 text-center">Tanggal Terdaftar</th>
-                    <th className="p-4 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-850">
-                  {karyawanCuciList.length === 0 ? (
-                    <tr>
-                      <td colSpan="3" className="p-8 text-center text-xs text-slate-600 font-medium italic">
-                        Belum ada karyawan cuci terdaftar. (Menggunakan fallback statis di Kasir)
-                      </td>
-                    </tr>
-                  ) : (
-                    karyawanCuciList.map((k) => (
-                      <tr key={k.id} className="hover:bg-slate-800/10 transition-colors">
-                        <td className="p-4 font-bold text-white text-sm">{k.nama}</td>
-                        <td className="p-4 text-center text-xs text-slate-400 font-mono">
-                          {new Date(k.created_at).toLocaleDateString('id-ID', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric'
-                          })}
-                        </td>
-                        <td className="p-4 text-right">
-                          <button
-                            onClick={() => handleDeleteKaryawanCuci(k.id, k.nama)}
-                            className="px-2.5 py-1 bg-slate-900 hover:bg-rose-500/10 text-brand-rose border border-slate-800 hover:border-brand-rose/20 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-                          >
-                            Hapus
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Crosscheck Detail Mobil Cuci */}
-      {selectedJobForCrosscheck && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="glass-panel w-full max-w-md p-6 rounded-2xl shadow-2xl border border-slate-800 space-y-4 animate-pop-in">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="font-black text-sm text-brand-blue tracking-wider uppercase font-mono">
-                  Detail Transaksi Mobil {selectedJobForCrosscheck.platNomor}
-                </h3>
-                <p className="text-[10px] text-slate-500">Crosscheck data transaksi & pembagian gaji</p>
-              </div>
-              <button 
-                onClick={() => setSelectedJobForCrosscheck(null)}
-                className="text-slate-400 hover:text-slate-200 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-850">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase block">ID Transaksi</span>
-                  <span className="font-mono text-[9px] font-bold text-slate-300 select-all">{selectedJobForCrosscheck.id}</span>
-                </div>
-                <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-850">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase block">Waktu Input</span>
-                  <span className="font-mono text-[9.5px] font-semibold text-slate-300">
-                    {new Date(selectedJobForCrosscheck.tanggal).toLocaleString('id-ID')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-850 space-y-2">
-                <h5 className="font-bold text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-1 mb-1">Spesifikasi Layanan</h5>
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-medium">Jenis Paket:</span>
-                  <span className="font-bold text-white">{selectedJobForCrosscheck.paket}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-medium">Ukuran & Variant:</span>
-                  <span className="font-bold text-slate-200">{selectedJobForCrosscheck.ukuran} • {selectedJobForCrosscheck.variant}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-slate-850/50">
-                  <span className="text-slate-400 font-medium">Total Harga Jasa:</span>
-                  <span className="font-black text-brand-emerald">{formatRupiah(selectedJobForCrosscheck.totalHarga)}</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-850 space-y-2">
-                <h5 className="font-bold text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-1 mb-1">Rincian Pembagian Gaji</h5>
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-medium">Kru Pencuci 1:</span>
-                  <span className="font-bold text-slate-200">{selectedJobForCrosscheck.rawItem?.anggota_1 || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-medium">Kru Pencuci 2:</span>
-                  <span className="font-bold text-slate-200">{selectedJobForCrosscheck.rawItem?.anggota_2 || 'Tidak ada (Solo)'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-medium">Tipe Pengerjaan:</span>
-                  <span className="font-bold text-slate-300 font-mono text-[10px]">{selectedJobForCrosscheck.split}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-slate-850/50">
-                  <span className="text-slate-400 font-bold">Porsi Gaji Diterima:</span>
-                  <span className="font-black text-brand-emerald text-sm">{formatRupiah(selectedJobForCrosscheck.shareWage)}</span>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setSelectedJobForCrosscheck(null)}
-              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 font-bold rounded-xl text-xs text-slate-200 transition-colors"
-            >
-              Tutup Rincian
-            </button>
-          </div>
         </div>
       )}
 
@@ -2104,7 +1448,58 @@ const Admin = () => {
           </div>
         </div>
       )}
-
+      {/* CUSTOM MODAL: Alert / Confirm */}
+      {customAlert && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fade-in">
+          <div className="glass-panel w-full max-w-sm p-6 rounded-2xl shadow-2xl border border-slate-800 shadow-[0_0_50px_rgba(16,185,129,0.08)] animate-pop-in text-center">
+            <div className="mb-4">
+              {customAlert.title === 'Sukses' ? (
+                <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center">
+                  <CheckCircle className="text-emerald-400" size={24} />
+                </div>
+              ) : customAlert.title === 'Error' || customAlert.title === 'Hapus Bahan Baku' || customAlert.title === 'Hapus Menu' || customAlert.title === 'Hapus Karyawan' ? (
+                <div className="w-12 h-12 mx-auto rounded-full bg-rose-500/10 flex items-center justify-center">
+                  <AlertCircle className="text-rose-400" size={24} />
+                </div>
+              ) : (
+                <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <AlertCircle className="text-amber-400" size={24} />
+                </div>
+              )}
+            </div>
+            
+            <h4 className="text-base font-extrabold text-white mb-2">
+              {customAlert.title}
+            </h4>
+            <p className="text-xs text-slate-350 leading-relaxed mb-6">
+              {customAlert.message}
+            </p>
+            
+            <div className="flex justify-center gap-3">
+              {customAlert.type === 'confirm' && (
+                <button
+                  type="button"
+                  onClick={customAlert.onCancel}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold rounded-xl text-xs transition-all w-24"
+                >
+                  Batal
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={customAlert.onConfirm}
+                className={`px-4 py-2 active:scale-95 font-bold rounded-xl text-xs transition-all w-24 ${
+                  customAlert.title === 'Error' || customAlert.title === 'Hapus Bahan Baku' || customAlert.title === 'Hapus Menu' || customAlert.title === 'Hapus Karyawan'
+                    ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                    : 'bg-brand-emerald hover:bg-emerald-500 text-slate-950'
+                }`}
+              >
+                {customAlert.type === 'confirm' ? 'Ya' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

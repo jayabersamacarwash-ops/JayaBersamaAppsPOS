@@ -26,3 +26,8 @@ dist-ssr
 .vercel
 JB.env
 .agents/
+JB_dev.env*
+backup_before_migration/
+scratch_*.js
+*.bak
+

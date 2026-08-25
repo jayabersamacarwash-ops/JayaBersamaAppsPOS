@@ -14,7 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  X
+  X,
+  Users,
+  Database
 } from 'lucide-react'
 
 const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
@@ -48,6 +50,18 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       name: 'Keuangan',
       path: '/finance',
       icon: DollarSign,
+      ownerOnly: true
+    },
+    {
+      name: 'Karyawan',
+      path: '/karyawan',
+      icon: Users,
+      ownerOnly: true
+    },
+    {
+      name: 'Database',
+      path: '/database',
+      icon: Database,
       ownerOnly: true
     },
     {

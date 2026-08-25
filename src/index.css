@@ -130,3 +130,79 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
+
+/* Print styles for A4 financial reports */
+@media print {
+  /* Hide all elements on screen */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Show only the print area and its children */
+  #print-area, #print-area * {
+    visibility: visible;
+    color: #000000 !important;
+    background-color: transparent !important;
+    border-color: #cbd5e1 !important; /* slate 300 for border */
+    overflow: visible !important;
+  }
+  
+  /* Specific colored text overrides for printing readability */
+  #print-area .text-brand-emerald {
+    color: #047857 !important; /* Emerald 700 */
+    font-weight: bold !important;
+  }
+  #print-area .text-brand-blue {
+    color: #0369a1 !important; /* Sky 700 */
+    font-weight: bold !important;
+  }
+  #print-area .bg-amber-500\/10, #print-area .bg-emerald-500\/10 {
+    background-color: #f1f5f9 !important; /* light grey background */
+    border: 1px solid #94a3b8 !important;
+    color: #0f172a !important;
+  }
+  
+  /* Fix display issues for print tables inside scrollable wrappers */
+  #print-area .overflow-x-auto {
+    overflow: visible !important;
+    display: block !important;
+    width: 100% !important;
+    border: none !important;
+  }
+
+  /* Reset print container coordinates */
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Make sure background gradients and glass styling are removed, and layout containers can stretch */
+  html, body, main, #root, .min-h-screen {
+    background-image: none !important;
+    background-color: white !important;
+    color: black !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+
+  /* Prevent page breaks inside key tables and items */
+  tr, table, h2, h3, h4, .p-4 {
+    page-break-inside: avoid !important;
+  }
+
+  /* Hide close/print/actions buttons while printing */
+  #print-area button, #print-area .no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}

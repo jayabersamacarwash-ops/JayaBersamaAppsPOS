@@ -7,9 +7,15 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Parsing manual berkas JB.env
+// Parsing manual berkas JB.env / JB_dev.env
 const customEnv = {}
-const envPath = path.resolve(__dirname, 'JB.env')
+const devEnvPath = path.resolve(__dirname, 'JB_dev.env')
+const prodEnvPath = path.resolve(__dirname, 'JB.env')
+
+// Gunakan JB.env jika di Vercel Production atau jika JB_dev.env tidak ada
+const isVercelProd = process.env.VERCEL_ENV === 'production'
+const envPath = (isVercelProd || !fs.existsSync(devEnvPath)) ? prodEnvPath : devEnvPath
+
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf-8')
   envContent.split(/\r?\n/).forEach(line => {
@@ -37,9 +43,11 @@ export default defineConfig({
     tailwindcss(),
   ],
   define: {
-    // Ekspos variabel VITE_ dari JB.env ke client-side import.meta.env
-    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(customEnv.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''),
-    'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(customEnv.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '')
+    // Ekspos variabel VITE_ dengan prioritas process.env (Vercel Dashboard) -> customEnv (file)
+    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(process.env.VITE_SUPABASE_URL || customEnv.VITE_SUPABASE_URL || ''),
+    'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || customEnv.VITE_SUPABASE_ANON_KEY || ''),
+    'import.meta.env.VITE_WACRM_API_URL': JSON.stringify(process.env.VITE_WACRM_API_URL || customEnv.VITE_WACRM_API_URL || ''),
+    'import.meta.env.VITE_WACRM_API_KEY': JSON.stringify(process.env.VITE_WACRM_API_KEY || customEnv.VITE_WACRM_API_KEY || '')
   }
 })
 

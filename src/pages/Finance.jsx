@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import { 
   DollarSign, 
@@ -9,14 +9,74 @@ import {
   AlertCircle,
   CheckCircle,
   FileText,
-  TrendingDown
+  TrendingDown,
+  Car
 } from 'lucide-react'
+import { formatRupiah, parseDateSafe } from '../utils/helpers'
+import {
+  validateExpenseForm,
+  formatExpensePayload,
+  validateIncomeForm,
+  formatIncomePayload
+} from '../utils/financeHelpers'
+
+const fetchAllRows = async (table, select = '*') => {
+  let allData = []
+  let from = 0
+  const step = 1000
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .range(from, from + step - 1)
+    if (error || !data || data.length === 0) break
+    allData = allData.concat(data)
+    if (data.length < step) break
+    from += step
+  }
+  return allData
+}
 
 const Finance = () => {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Custom Alert / Confirm Modal State
+  const [customAlert, setCustomAlert] = useState(null)
+
+  const showAlert = (message, title = 'Informasi') => {
+    return new Promise((resolve) => {
+      setCustomAlert({
+        title,
+        message,
+        type: 'alert',
+        onConfirm: () => {
+          setCustomAlert(null)
+          resolve(true)
+        }
+      })
+    })
+  }
+
+  const showConfirm = (message, title = 'Konfirmasi') => {
+    return new Promise((resolve) => {
+      setCustomAlert({
+        title,
+        message,
+        type: 'confirm',
+        onConfirm: () => {
+          setCustomAlert(null)
+          resolve(true)
+        },
+        onCancel: () => {
+          setCustomAlert(null)
+          resolve(false)
+        }
+      })
+    })
+  }
 
   // Database Data
   const [cashflowLogs, setCashflowLogs] = useState([])
@@ -29,6 +89,15 @@ const Finance = () => {
     kategori: 'Operasional',
     total_harga: 0,
     keterangan: '',
+    pos: 'SALDO CASH'
+  })
+
+  const [showIncomeModal, setShowIncomeModal] = useState(false)
+  const [incomeForm, setIncomeForm] = useState({
+    nominal: '',
+    keterangan: '',
+    kategori: 'Pemasukan Lain-lain',
+    pos: 'SALDO CASH'
   })
   
   // State khusus untuk Barang Masuk (Restok Bahan Baku) jika Kategori === 'Bahan Baku'
@@ -37,11 +106,19 @@ const Finance = () => {
   // ENUM Options
   const jenisOptions = ['pengeluaran Cafe', 'pengeluaran Carwash', 'Pengeluaran', 'Casbon']
   const kategoriOptions = ['Bahan Baku', 'Casbon', 'Operasional', 'Barang']
+  const incomeKategoriOptions = ['Pemasukan Lain-lain', 'Modal Awal', 'Pemasukan Cafe', 'Pemasukan Carwash']
+  const posOptions = ['SALDO CASH', 'SALDO REKENING Y', 'SALDO REKENING N']
 
   const [summary, setSummary] = useState({
     totalIncome: 0,
     totalExpense: 0,
     totalBalance: 0
+  })
+
+  // Carwash Finance Custom Metrics State
+  const [cwFinanceMetricsRaw, setCwFinanceMetricsRaw] = useState({ rawCw: [], rawCf: [] })
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    return new Date().toLocaleDateString('en-CA').substring(0, 7)
   })
 
   const fetchFinanceData = async () => {
@@ -98,6 +175,17 @@ const Finance = () => {
 
       setCashflowLogs(formattedCashflow)
       setStokBahan(formattedStok)
+
+      // 4. Fetch all carwash records to compute total cw revenue
+      // 4. Fetch all carwash records to compute total cw revenue
+      const cwData = await fetchAllRows('carwash', 'harga, status, tanggal')
+      // 5. Fetch all cashflow records to compute metric deductions
+      const allCfData = await fetchAllRows('cashflow', 'jenis, kategori, keterangan_transaksi, pengeluaran, tanggal')
+
+      setCwFinanceMetricsRaw({
+        rawCw: cwData || [],
+        rawCf: allCfData || []
+      })
     } catch (err) {
       console.error('Error fetching finance data:', err)
     } finally {
@@ -108,6 +196,73 @@ const Finance = () => {
   useEffect(() => {
     fetchFinanceData()
   }, [])
+
+  // Generate options for the last 12 months
+  const monthOptions = useMemo(() => {
+    const options = []
+    const currentDate = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
+      const value = d.toLocaleDateString('en-CA').substring(0, 7) // YYYY-MM
+      const label = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+      options.push({ value, label })
+    }
+    return options
+  }, [])
+
+  // Memoized filtered metrics based on selectedMonth
+  const filteredCwMetrics = useMemo(() => {
+    const { rawCw, rawCf } = cwFinanceMetricsRaw
+
+    // Filter carwash records for the selected month
+    const filteredCw = (rawCw || []).filter(c => {
+      if (!c.tanggal) return false
+      return c.tanggal.startsWith(selectedMonth) && c.status === 'Selesai'
+    })
+    const totalCwRevenue = filteredCw.reduce((sum, c) => sum + (parseFloat(c.harga) || 0), 0)
+
+    // Filter cashflow records for the selected month
+    const filteredCf = (rawCf || []).filter(c => {
+      if (!c.tanggal) return false
+      return c.tanggal.startsWith(selectedMonth)
+    })
+
+    // A. Owner: 1/3 of total cw revenue - accumulated expenses with description "bang awal"
+    const totalBangAwal = filteredCf
+      .filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('bang awal'))
+      .reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const ownerMetric = (totalCwRevenue / 3) - totalBangAwal
+
+    // B. Operasional: 1/3 of total cw revenue - accumulated expenses carwash saja, di luar gaji karyawan & casbon
+    const totalCwExpNoWages = filteredCf
+      .filter(c => {
+        const isCw = String(c.jenis || '').toLowerCase().includes('carwash')
+        const isExp = parseFloat(c.pengeluaran || 0) > 0
+        const isWageOrCasbon = String(c.keterangan_transaksi || '').toLowerCase().includes('gaji') ||
+                               String(c.keterangan_transaksi || '').toLowerCase().includes('wage') ||
+                               String(c.keterangan_transaksi || '').toLowerCase().includes('pencuci') ||
+                               String(c.keterangan_transaksi || '').toLowerCase().includes('casbon') ||
+                               String(c.kategori || '').toLowerCase().includes('karyawan') ||
+                               String(c.kategori || '').toLowerCase().includes('casbon') ||
+                               String(c.jenis || '').toLowerCase().includes('casbon')
+        return isCw && isExp && !isWageOrCasbon
+      })
+      .reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const operasionalMetric = (totalCwRevenue / 3) - totalCwExpNoWages
+
+    // C. Gaji Karyawan Cuci: 1/3 of total cw revenue - expenses with description "gaji karyawan cuci"
+    const totalWagesCw = filteredCf
+      .filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('gaji karyawan cuci'))
+      .reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const gajiKaryawanMetric = (totalCwRevenue / 3) - totalWagesCw
+
+    return {
+      owner: ownerMetric,
+      operasional: operasionalMetric,
+      gajiKaryawan: gajiKaryawanMetric,
+      totalCwRevenue
+    }
+  }, [cwFinanceMetricsRaw, selectedMonth])
 
   // Tambah item barang masuk (restok) di form
   const addBarangMasukItem = () => {
@@ -148,74 +303,55 @@ const Finance = () => {
   }, [barangMasukList, expenseForm.kategori])
 
   // Submit Expense Handler
+  // Submit Expense Handler
   const handleSaveExpense = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess('')
 
-    const totalVal = parseFloat(expenseForm.total_harga)
-    if (isNaN(totalVal) || totalVal <= 0) {
-      return setError('Total harga pengeluaran harus lebih besar dari 0.')
-    }
-    if (expenseForm.kategori === 'Bahan Baku' && barangMasukList.length === 0) {
-      return setError('Daftar barang masuk/restok wajib diisi untuk kategori Bahan Baku.')
+    const validation = validateExpenseForm(expenseForm, barangMasukList)
+    if (!validation.isValid) {
+      return setError(validation.error)
     }
 
     setSubmitting(true)
     try {
-      const newExpId = self.crypto.randomUUID()
+      const newCfId = generateUUID()
       const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
-      const currentTime = new Date().toTimeString().split(' ')[0] // HH:MM:SS
+      const timestamp = new Date().toISOString()
 
-      const isBahanBaku = expenseForm.kategori === 'Bahan Baku' && barangMasukList.length > 0
-      const firstBaku = isBahanBaku ? barangMasukList[0] : null
+      const payload = formatExpensePayload({
+        form: expenseForm,
+        barangMasukList,
+        stokBahan,
+        newCfId,
+        todayDate,
+        timestamp
+      })
 
-      // 1. Simpan Pengeluaran
-      const { error: expErr } = await supabase
-        .from('pengeluaran')
-        .insert({
-          id_pengeluaran: newExpId,
-          tanggal: todayDate,
-          jam: currentTime,
-          jenis: expenseForm.jenis,
-          kategori: expenseForm.kategori,
-          nominal: totalVal,
-          nama_pengeluaran: expenseForm.keterangan,
-          apakah_stok: isBahanBaku ? 'Ya' : 'Tidak',
-          id_bahan_baku: firstBaku ? firstBaku.id_bahan_baku : '',
-          qty: firstBaku ? parseFloat(firstBaku.jumlah) : 0
-        })
+      // 1. Simpan langsung ke tabel Cashflow
+      const { error: cfErr } = await supabase
+        .from('cashflow')
+        .insert(payload.cashflow)
 
-      if (expErr) throw expErr
+      if (cfErr) throw cfErr
 
       // 2. Simpan Detail Barang Masuk (Jika Bahan Baku)
-      if (isBahanBaku) {
-        const insertDetails = barangMasukList.map(item => {
-          const matchingBahan = stokBahan.find(b => b.nama_bahan === item.id_bahan_baku)
-          return {
-            id_masuk: self.crypto.randomUUID(),
-            id_pengeluaran: newExpId,
-            id_bahan_baku: item.id_bahan_baku,
-            tanggal: todayDate,
-            nama_produk: matchingBahan ? (matchingBahan.nama_produk || matchingBahan.nama_bahan) : item.id_bahan_baku,
-            jumlah_masuk: parseFloat(item.jumlah),
-            harga_satuan: parseFloat(item.harga_satuan)
-          }
-        })
-
+      if (payload.details && payload.details.length > 0) {
         const { error: bmErr } = await supabase
           .from('barang_masuk')
-          .insert(insertDetails)
+          .insert(payload.details)
 
         if (bmErr) throw bmErr
       }
 
-      setSuccess('Pengeluaran berhasil dicatat dan stok telah diperbarui!')
+      setSuccess('Pengeluaran berhasil dicatat langsung ke Cashflow!')
       setExpenseForm({
         jenis: 'pengeluaran Cafe',
         kategori: 'Operasional',
         total_harga: 0,
         keterangan: '',
+        pos: 'SALDO CASH'
       })
       setBarangMasukList([])
       setShowExpenseModal(false)
@@ -230,63 +366,94 @@ const Finance = () => {
     }
   }
 
+  // Submit Income Handler
+  const handleSaveIncome = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+
+    const validation = validateIncomeForm(incomeForm)
+    if (!validation.isValid) {
+      return setError(validation.error)
+    }
+
+    setSubmitting(true)
+    try {
+      const newCfId = generateUUID()
+      const todayDate = new Date().toLocaleDateString('en-CA')
+      const timestamp = new Date().toISOString()
+
+      const payload = formatIncomePayload({
+        form: incomeForm,
+        newCfId,
+        todayDate,
+        timestamp
+      })
+
+      const { error: cfErr } = await supabase
+        .from('cashflow')
+        .insert(payload)
+
+      if (cfErr) throw cfErr
+
+      setSuccess('Pemasukan manual berhasil dicatat!')
+      setIncomeForm({
+        nominal: '',
+        keterangan: '',
+        kategori: 'Pemasukan Lain-lain',
+        pos: 'SALDO CASH'
+      })
+      setShowIncomeModal(false)
+      await fetchFinanceData()
+
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      console.error('Error saving income:', err)
+      setError(err.message || 'Gagal menyimpan pemasukan.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Delete Cashflow Handler
+  const handleDeleteCashflow = async (idCashflow) => {
+    const confirmed = await showConfirm('Apakah Anda yakin ingin menghapus log cashflow ini secara permanen?', 'Hapus Cashflow')
+    if (!confirmed) return
+    setLoading(true)
+    setError('')
+    setSuccess('')
+    try {
+      // Hapus log dari cashflow
+      const { error: cfErr } = await supabase
+        .from('cashflow')
+        .delete()
+        .eq('id_cashflow', idCashflow)
+
+      if (cfErr) throw cfErr
+
+      // Hapus juga detail restok dari barang_masuk jika ada yang mereferensikan id_cashflow ini
+      await supabase
+        .from('barang_masuk')
+        .delete()
+        .eq('id_cashflow', idCashflow)
+
+      setSuccess('Log cashflow berhasil dihapus!')
+      await fetchFinanceData()
+
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      console.error('Error deleting cashflow:', err)
+      setError(err.message || 'Gagal menghapus log cashflow.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Mengambil total dari summary state (agregasi database view)
   const totalBalance = summary.totalBalance
   const totalIncome = summary.totalIncome
   const totalExpense = summary.totalExpense
 
-  const formatRupiah = (val) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(val)
-  }
-
-  const parseDateSafe = (dateStr) => {
-    if (!dateStr) return new Date()
-    if (dateStr instanceof Date) return dateStr
-
-    const str = String(dateStr).trim()
-    if (str.includes('T')) {
-      const d = new Date(str)
-      if (!isNaN(d.getTime())) return d
-    }
-
-    const parts = str.split(/[\sT]+/)
-    const datePart = parts[0]
-    const timePart = parts[1] || '00:00:00'
-
-    const dateSplit = datePart.split(/[-/]/)
-    if (dateSplit.length === 3) {
-      let day, month, year
-      if (dateSplit[0].length === 4) {
-        year = parseInt(dateSplit[0], 10)
-        month = parseInt(dateSplit[1], 10) - 1
-        day = parseInt(dateSplit[2], 10)
-      } else {
-        day = parseInt(dateSplit[0], 10)
-        month = parseInt(dateSplit[1], 10) - 1
-        year = parseInt(dateSplit[2], 10)
-
-        if (month > 11) {
-          const temp = month
-          month = day - 1
-          day = temp + 1
-        }
-      }
-
-      const timeSplit = timePart.replace(/\./g, ':').split(':')
-      const hour = parseInt(timeSplit[0], 10) || 0
-      const minute = parseInt(timeSplit[1], 10) || 0
-      const second = parseInt(timeSplit[2], 10) || 0
-
-      return new Date(year, month, day, hour, minute, second)
-    }
-
-    const finalFallback = new Date(str)
-    return isNaN(finalFallback.getTime()) ? new Date() : finalFallback
-  }
 
   return (
     <div className="p-6 pb-24 md:pb-6 space-y-6 max-w-7xl mx-auto">
@@ -299,13 +466,22 @@ const Finance = () => {
           </h1>
           <p className="text-slate-400 text-sm mt-1">Kelola cashflow, pengeluaran, dan restok gudang</p>
         </div>
-        <button
-          onClick={() => setShowExpenseModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-brand-rose hover:bg-rose-500 active:bg-rose-600 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-rose/25 transition-all text-sm"
-        >
-          <Plus size={16} />
-          Catat Pengeluaran (Expense)
-        </button>
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={() => setShowIncomeModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-emerald/25 transition-all text-sm"
+          >
+            <Plus size={16} />
+            Catat Pemasukan (Income)
+          </button>
+          <button
+            onClick={() => setShowExpenseModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-brand-rose hover:bg-rose-500 active:bg-rose-600 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-rose/25 transition-all text-sm"
+          >
+            <Plus size={16} />
+            Catat Pengeluaran (Expense)
+          </button>
+        </div>
       </div>
 
       {/* Alert */}
@@ -352,18 +528,82 @@ const Finance = () => {
         </div>
       </div>
 
+      {/* Keuangan Carwash */}
+      <div className="space-y-4 pt-4 border-t border-slate-800/80">
+        <div className="flex justify-between items-center flex-wrap gap-4">
+          <div>
+            <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+              <Car size={20} className="text-brand-emerald" />
+              Keuangan Carwash
+            </h2>
+            <p className="text-slate-400 text-xs mt-1">Pembagian 1/3 total omzet carwash setelah dikurangi beban masing-masing segmen</p>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Bulan:</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-slate-900 border border-slate-800 text-white rounded-xl py-2 px-3 text-xs font-semibold focus:outline-none focus:border-brand-emerald cursor-pointer"
+            >
+              {monthOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Owner */}
+          <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-slate-800/80">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Owner</p>
+            <h3 className={`text-2xl font-black mt-2 ${filteredCwMetrics.owner >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
+              {formatRupiah(filteredCwMetrics.owner)}
+            </h3>
+            <span className="text-[10px] text-slate-500 mt-2 block">
+              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Pengeluaran "bang awal"
+            </span>
+          </div>
+
+          {/* Operasional */}
+          <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-slate-800/80">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Operasional</p>
+            <h3 className={`text-2xl font-black mt-2 ${filteredCwMetrics.operasional >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
+              {formatRupiah(filteredCwMetrics.operasional)}
+            </h3>
+            <span className="text-[10px] text-slate-500 mt-2 block">
+              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Operasional Murni
+            </span>
+          </div>
+
+          {/* Gaji Karyawan Cuci */}
+          <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-slate-800/80">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Gaji Karyawan Cuci</p>
+            <h3 className={`text-2xl font-black mt-2 ${filteredCwMetrics.gajiKaryawan >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
+              {formatRupiah(filteredCwMetrics.gajiKaryawan)}
+            </h3>
+            <span className="text-[10px] text-slate-500 mt-2 block">
+              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Gaji Karyawan Cuci
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Cashflow Logs Table */}
       <div className="glass-panel p-6 rounded-2xl border border-slate-800/80">
         <h3 className="text-lg font-bold text-white mb-4">Log Transaksi Cashflow Lengkap</h3>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[650px] text-left text-sm text-slate-300">
-            <thead>
+             <thead>
               <tr className="border-b border-slate-800 text-slate-500 font-semibold text-xs uppercase tracking-wider">
                 <th className="pb-3">Tanggal</th>
                 <th className="pb-3">Tipe</th>
                 <th className="pb-3">Keterangan</th>
                 <th className="pb-3">POS Kas</th>
                 <th className="pb-3 text-right">Jumlah</th>
+                <th className="pb-3 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
@@ -395,6 +635,14 @@ const Finance = () => {
                     </td>
                     <td className={`py-3.5 text-right font-bold ${isPemasukan ? 'text-brand-emerald' : 'text-brand-rose'}`}>
                       {isPemasukan ? '+' : '-'} {formatRupiah(log.jumlah)}
+                    </td>
+                    <td className="py-3.5 text-center">
+                      <button
+                        onClick={() => handleDeleteCashflow(log.id)}
+                        className="text-rose-500 hover:text-rose-450 font-bold px-2 py-1 text-xs"
+                      >
+                        Hapus
+                      </button>
                     </td>
                   </tr>
                 )
@@ -433,7 +681,7 @@ const Finance = () => {
               )}
 
               <form onSubmit={handleSaveExpense} className="space-y-4 overflow-y-auto max-h-[50vh] pr-2">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
                       Jenis Pengeluaran
@@ -465,6 +713,19 @@ const Finance = () => {
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
                     >
                       {kategoriOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                      POS Kas
+                    </label>
+                    <select
+                      value={expenseForm.pos}
+                      onChange={(e) => setExpenseForm(prev => ({ ...prev, pos: e.target.value }))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
+                    >
+                      {posOptions.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
                 </div>
@@ -582,6 +843,161 @@ const Finance = () => {
                 className="px-4 py-2 bg-brand-rose hover:bg-rose-500 active:bg-rose-600 text-slate-950 font-bold rounded-xl text-sm disabled:opacity-50"
               >
                 {submitting ? 'Menyimpan...' : 'Simpan Transaksi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Catat Pemasukan */}
+      {showIncomeModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="glass-panel w-full max-w-xl p-6 rounded-2xl shadow-2xl border border-slate-800 max-h-[90vh] flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-center border-b border-slate-800 pb-4 mb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Plus className="text-brand-emerald" />
+                  Catat Pemasukan Baru
+                </h3>
+                <button 
+                  onClick={() => setShowIncomeModal(false)}
+                  className="text-slate-400 hover:text-slate-200"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {error && (
+                <div className="mb-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveIncome} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Kategori Pemasukan
+                    </label>
+                    <select
+                      value={incomeForm.kategori}
+                      onChange={(e) => setIncomeForm(prev => ({ ...prev, kategori: e.target.value }))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                    >
+                      {incomeKategoriOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                      POS Kas Tujuan
+                    </label>
+                    <select
+                      value={incomeForm.pos}
+                      onChange={(e) => setIncomeForm(prev => ({ ...prev, pos: e.target.value }))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                    >
+                      {posOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Keterangan
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Setoran modal awal owner, pendapatan iklan..."
+                    value={incomeForm.keterangan}
+                    onChange={(e) => setIncomeForm(prev => ({ ...prev, keterangan: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Nominal Pemasukan (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={incomeForm.nominal}
+                    onChange={(e) => setIncomeForm(prev => ({ ...prev, nominal: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm font-mono focus:outline-none focus:border-brand-emerald"
+                  />
+                </div>
+              </form>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-800 pt-4 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowIncomeModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                onClick={handleSaveIncome}
+                disabled={submitting}
+                className="px-4 py-2 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-500 text-slate-950 font-bold rounded-xl text-sm disabled:opacity-50"
+              >
+                {submitting ? 'Menyimpan...' : 'Simpan Transaksi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* CUSTOM MODAL: Alert / Confirm */}
+      {customAlert && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fade-in">
+          <div className="glass-panel w-full max-w-sm p-6 rounded-2xl shadow-2xl border border-slate-800 shadow-[0_0_50px_rgba(16,185,129,0.08)] animate-pop-in text-center">
+            <div className="mb-4">
+              {customAlert.title === 'Sukses' ? (
+                <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center">
+                  <CheckCircle className="text-emerald-400" size={24} />
+                </div>
+              ) : customAlert.title === 'Error' || customAlert.title === 'Hapus Cashflow' ? (
+                <div className="w-12 h-12 mx-auto rounded-full bg-rose-500/10 flex items-center justify-center">
+                  <AlertCircle className="text-rose-400" size={24} />
+                </div>
+              ) : (
+                <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <AlertCircle className="text-amber-400" size={24} />
+                </div>
+              )}
+            </div>
+            
+            <h4 className="text-base font-extrabold text-white mb-2">
+              {customAlert.title}
+            </h4>
+            <p className="text-xs text-slate-350 leading-relaxed mb-6">
+              {customAlert.message}
+            </p>
+            
+            <div className="flex justify-center gap-3">
+              {customAlert.type === 'confirm' && (
+                <button
+                  type="button"
+                  onClick={customAlert.onCancel}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold rounded-xl text-xs transition-all w-24"
+                >
+                  Batal
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={customAlert.onConfirm}
+                className={`px-4 py-2 active:scale-95 font-bold rounded-xl text-xs transition-all w-24 ${
+                  customAlert.title === 'Error' || customAlert.title === 'Hapus Cashflow'
+                    ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                    : 'bg-brand-emerald hover:bg-emerald-500 text-slate-950'
+                }`}
+              >
+                {customAlert.type === 'confirm' ? 'Ya' : 'OK'}
               </button>
             </div>
           </div>

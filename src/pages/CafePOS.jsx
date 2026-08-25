@@ -1,28 +1,34 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import { 
-  Plus, 
-  Minus, 
-  Trash2, 
-  Check, 
-  ShoppingCart, 
-  Car, 
-  Coffee, 
+import {
+  Plus,
+  Minus,
+  Trash2,
+  Check,
+  ShoppingCart,
+  Car,
+  Coffee,
   Search,
   CheckCircle,
   AlertCircle,
   Wallet,
   History,
-  ChevronRight
+  ChevronRight,
+  ChevronUp,
+  TrendingDown,
+  RefreshCw
 } from 'lucide-react'
 
-const generateUUID = () => {
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
-    return window.crypto.randomUUID()
-  }
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-}
+import {
+  generateUUID,
+  formatRupiah,
+  parseDateSafe,
+  getShiftForCashier,
+  calculateTutupKasirRecap
+} from '../utils/helpers'
+import { addToCart as cartAdd, updateQty as cartUpdate, removeFromCart as cartRemove } from '../utils/cartHelpers'
+import { validatePosExpenseForm, formatPosExpensePayload } from '../utils/financeHelpers'
 
 const getMenuPhoto = (menuName) => {
   const name = String(menuName).toLowerCase()
@@ -92,7 +98,7 @@ const CafePOS = () => {
   // Pending Bills States
   const [pendingBills, setPendingBills] = useState([])
   const [settlingBill, setSettlingBill] = useState(null)
-  
+
   // Cashier Cash Register Stats
   const [cashierCash, setCashierCash] = useState({
     balance: 0,
@@ -102,6 +108,64 @@ const CafePOS = () => {
   })
   const [todayTransactions, setTodayTransactions] = useState([])
   const [settlePaymentMethod, setSettlePaymentMethod] = useState('')
+
+  // Split Payment states
+  const [splitCashAmount, setSplitCashAmount] = useState('')
+  const [splitQrisAmount, setSplitQrisAmount] = useState('')
+
+  // Tukar Uang (Cash Out) states
+  const [exchangeCash, setExchangeCash] = useState('')
+  const [exchangeQris, setExchangeQris] = useState('')
+  const [exchangeCustomer, setExchangeCustomer] = useState('')
+
+  // Edit Transaksi state
+  const [editingStrukId, setEditingStrukId] = useState(null)
+
+  // Custom Alert / Confirm Modal State
+  const [customAlert, setCustomAlert] = useState(null)
+
+  const showAlert = (message, title = 'Informasi') => {
+    return new Promise((resolve) => {
+      setCustomAlert({
+        title,
+        message,
+        type: 'alert',
+        onConfirm: () => {
+          setCustomAlert(null)
+          resolve(true)
+        }
+      })
+    })
+  }
+
+  const showConfirm = (message, title = 'Konfirmasi') => {
+    return new Promise((resolve) => {
+      setCustomAlert({
+        title,
+        message,
+        type: 'confirm',
+        onConfirm: () => {
+          setCustomAlert(null)
+          resolve(true)
+        },
+        onCancel: () => {
+          setCustomAlert(null)
+          resolve(false)
+        }
+      })
+    })
+  }
+
+  // POS State - Expense
+  const [posExpenseForm, setPosExpenseForm] = useState({
+    keterangan: '',
+    nominal: '',
+    unit: 'Cafe',
+    kategori: 'Operasional',
+    karyawan: ''
+  })
+  const [todayExpenses, setTodayExpenses] = useState([])
+  const [editingExpenseId, setEditingExpenseId] = useState(null)
 
   // POS State - Cafe
   const [searchQuery, setSearchQuery] = useState('')
@@ -153,10 +217,14 @@ const CafePOS = () => {
 
       const defaultCashiers = dbCashiers.data || []
       const defaultPayments = dbPayments.data || []
-      const defaultMenus = dbMenu.data 
+      const defaultMenus = dbMenu.data
         ? dbMenu.data.map(m => ({ ...m, nama_menu: m.daftar_menu }))
         : []
       const defaultResep = dbResep.data || []
+
+      if (!defaultPayments.some(p => p.nama === 'SPLIT')) {
+        defaultPayments.push({ nama: 'SPLIT', is_active: true })
+      }
 
       setCashiers(defaultCashiers)
       setPaymentMethods(defaultPayments)
@@ -193,6 +261,7 @@ const CafePOS = () => {
       await fetchPendingBills()
       await fetchCashierCash()
       await fetchTodayTransactions()
+      await fetchTodayExpenses()
 
     } catch (err) {
       console.error('Error loading master data:', err)
@@ -207,19 +276,30 @@ const CafePOS = () => {
         .select('*')
         .eq('pos', 'SALDO CASH')
         .single()
-      
+
       const bal = balData ? parseFloat(balData.balance) : 0
 
-      // 2. Fetch today's cash inflow
       const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
       const { data: todayStruk } = await supabase
         .from('struk')
-        .select('total_tagihan')
+        .select('total_tagihan, metode_bayar, nominal_cash, nominal_qris')
         .eq('status_bayar', 'Selesai')
-        .eq('metode_bayar', 'CASH')
         .eq('tanggal', todayDate)
-      
-      const todayIn = todayStruk ? todayStruk.reduce((sum, item) => sum + parseFloat(item.total_tagihan || 0), 0) : 0
+
+      let todayIn = 0
+      let todayQRIS = 0
+      if (todayStruk) {
+        todayStruk.forEach(s => {
+          if (s.metode_bayar === 'CASH') {
+            todayIn += parseFloat(s.total_tagihan || 0)
+          } else if (s.metode_bayar === 'QRIS') {
+            todayQRIS += parseFloat(s.total_tagihan || 0)
+          } else if (s.metode_bayar === 'SPLIT') {
+            todayIn += parseFloat(s.nominal_cash || 0)
+            todayQRIS += parseFloat(s.nominal_qris || 0)
+          }
+        })
+      }
 
       // 3. Fetch today's cash outflow
       const { data: todayExp } = await supabase
@@ -228,16 +308,6 @@ const CafePOS = () => {
         .eq('tanggal', todayDate)
 
       const todayOut = todayExp ? todayExp.reduce((sum, item) => sum + parseFloat(item.nominal || 0), 0) : 0
-
-      // 4. Fetch today's QRIS inflow
-      const { data: todayQRISData } = await supabase
-        .from('struk')
-        .select('total_tagihan')
-        .eq('status_bayar', 'Selesai')
-        .eq('metode_bayar', 'QRIS')
-        .eq('tanggal', todayDate)
-      
-      const todayQRIS = todayQRISData ? todayQRISData.reduce((sum, item) => sum + parseFloat(item.total_tagihan || 0), 0) : 0
 
       setCashierCash({
         balance: bal,
@@ -265,7 +335,7 @@ const CafePOS = () => {
           status_bayar,
           nama_pelanggan,
           cafe (nama_menu, qty, harga_satuan),
-          carwash (paket, plat, harga)
+          carwash (paket, plat, harga, model)
         `)
         .eq('tanggal', todayDate)
         .order('jam', { ascending: false })
@@ -289,7 +359,8 @@ const CafePOS = () => {
           carwash: (item.carwash || []).map(cw => ({
             paket: cw.paket,
             plat_nomor: cw.plat,
-            harga: cw.harga
+            harga: cw.harga,
+            merk_mobil: cw.model
           }))
         }))
         setTodayTransactions(formatted)
@@ -298,6 +369,411 @@ const CafePOS = () => {
       }
     } catch (err) {
       console.error('Error fetching today transactions:', err)
+    }
+  }
+
+  const fetchTodayExpenses = async () => {
+    try {
+      const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
+      const { data, error } = await supabase
+        .from('pengeluaran')
+        .select('*')
+        .eq('tanggal', todayDate)
+        .order('jam', { ascending: false })
+
+      if (error) throw error
+      setTodayExpenses(data || [])
+    } catch (err) {
+      console.error('Error fetching today expenses:', err)
+    }
+  }
+
+  const handleSavePosExpense = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess(false)
+    setLoading(true)
+
+    const validation = validatePosExpenseForm(posExpenseForm)
+    if (!validation.isValid) {
+      setLoading(false)
+      return setError(validation.error)
+    }
+
+    try {
+      if (editingExpenseId) {
+        // Mode Edit: Update data pengeluaran
+        const isCasbon = posExpenseForm.kategori === 'Casbon'
+        const updatePayload = {
+          jenis: isCasbon ? 'Casbon' : `pengeluaran ${posExpenseForm.unit}`,
+          kategori: isCasbon ? `Casbon - ${posExpenseForm.karyawan}` : posExpenseForm.kategori,
+          nominal: parseFloat(posExpenseForm.nominal),
+          nama_pengeluaran: isCasbon ? `Casbon ${posExpenseForm.karyawan} (${posExpenseForm.keterangan})` : posExpenseForm.keterangan,
+        }
+
+        const { error: updErr } = await supabase
+          .from('pengeluaran')
+          .update(updatePayload)
+          .eq('id_pengeluaran', editingExpenseId)
+
+        if (updErr) throw updErr
+        setEditingExpenseId(null)
+      } else {
+        // Mode Baru: Insert data pengeluaran
+        const todayDate = new Date().toLocaleDateString('en-CA')
+        const currentTime = new Date().toTimeString().split(' ')[0]
+        const newExpId = generateUUID()
+
+        const payload = formatPosExpensePayload({
+          form: posExpenseForm,
+          todayDate,
+          currentTime,
+          newExpId
+        })
+
+        const { error: insErr } = await supabase
+          .from('pengeluaran')
+          .insert(payload)
+
+        if (insErr) throw insErr
+      }
+
+      setSuccess(true)
+      setPosExpenseForm({
+        keterangan: '',
+        nominal: '',
+        unit: 'Cafe',
+        kategori: 'Operasional',
+        karyawan: ''
+      })
+      await fetchTodayExpenses()
+      await fetchCashierCash()
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err) {
+      console.error('Error saving POS expense:', err)
+      setError(err.message || 'Gagal menyimpan pengeluaran.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSaveExchange = async (e) => {
+    e.preventDefault()
+
+    const cashOut = parseFloat(exchangeCash || 0)
+    const qrisIn = parseFloat(exchangeQris || 0)
+    const adminFee = qrisIn - cashOut
+
+    if (cashOut <= 0 || qrisIn <= 0) {
+      await showAlert('Jumlah uang tunai dan transfer QRIS harus lebih besar dari 0!', 'Input Tidak Valid')
+      return
+    }
+
+    if (adminFee < 0) {
+      const confirmed = await showConfirm('PERINGATAN: Nominal QRIS masuk lebih kecil dari Cash keluar. Ini berarti toko Anda rugi selisih. Tetap lanjutkan?', 'Perhatian')
+      if (!confirmed) {
+        return
+      }
+    }
+
+    if (!selectedCashier) {
+      await showAlert('Silakan pilih kasir terlebih dahulu di bagian atas halaman!', 'Kasir Belum Dipilih')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+
+    try {
+      const todayDate = new Date().toLocaleDateString('en-CA')
+      const currentTime = new Date().toTimeString().split(' ')[0]
+      const timestamp = new Date().toISOString()
+
+      const newStrukId = generateUUID()
+      const newPengeluaranId = generateUUID()
+
+      // 1. Catat Struk Pemasukan QRIS
+      const { error: strukErr } = await supabase
+        .from('struk')
+        .insert({
+          id_struk: newStrukId,
+          tanggal: todayDate,
+          jam: currentTime,
+          metode_bayar: 'QRIS',
+          status_bayar: 'Selesai',
+          kasir: selectedCashier.toUpperCase(),
+          total_tagihan: qrisIn,
+          keterangan: `Tukar Uang (Tarik Tunai) - Cust: ${exchangeCustomer || 'Umum'}`,
+          waktu_dibuat: timestamp,
+          waktu_dibayar: timestamp
+        })
+
+      if (strukErr) throw strukErr
+
+      // 2. Catat Pengeluaran Cash Laci
+      const { error: expErr } = await supabase
+        .from('pengeluaran')
+        .insert({
+          id_pengeluaran: newPengeluaranId,
+          tanggal: todayDate,
+          jam: currentTime,
+          nominal: cashOut,
+          nama_pengeluaran: `Tukar Uang Cash Keluar - Cust: ${exchangeCustomer || 'Umum'}`,
+          jenis: 'pengeluaran Bersama',
+          kategori: 'Tukar Uang',
+          apakah_stok: 'tidak',
+          created_at: timestamp
+        })
+
+      if (expErr) throw expErr
+
+      await showAlert('Transaksi Tukar Uang berhasil dicatat!', 'Sukses')
+      setExchangeCash('')
+      setExchangeQris('')
+      setExchangeCustomer('')
+      await fetchCashierCash()
+    } catch (err) {
+      console.error(err)
+      await showAlert('Gagal mencatat Tukar Uang: ' + err.message, 'Error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleStartEditTransaction = async (struk) => {
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+    try {
+      // 1. Ambil data Cafe items
+      const { data: dbCafe, error: cafeErr } = await supabase
+        .from('cafe')
+        .select('*')
+        .eq('id_struk', struk.id_struk)
+
+      if (cafeErr) throw cafeErr
+
+      // 2. Ambil data Carwash item
+      const { data: dbCw, error: cwErr } = await supabase
+        .from('carwash')
+        .select('*')
+        .eq('id_struk', struk.id_struk)
+        .maybeSingle()
+
+      if (cwErr) throw cwErr
+
+      // 3. Masukkan ke state Cart Cafe
+      const cartItems = (dbCafe || []).map(item => ({
+        nama_menu: item.nama_menu,
+        qty: item.qty,
+        harga: item.harga_satuan
+      }))
+      setCart(cartItems)
+
+      // 4. Masukkan ke state Carwash Form
+      if (dbCw) {
+        setHasCarwash(true)
+        setCarwashForm({
+          platNomor: dbCw.plat || '',
+          model: dbCw.model || 'Mobil',
+          noTelepon: dbCw.no_telepon || '',
+          ukuran: dbCw.ukuran || 'Medium',
+          variant: dbCw.variant || 'Regular',
+          paket: dbCw.paket || 'PAKET CUCI BIASA',
+          harga: parseFloat(dbCw.harga || 0),
+          gaji_pencuci: parseFloat(dbCw.gaji_pencuci || 0),
+          kehadiran: dbCw.kehadiran || 'hadir',
+          anggota1: dbCw.anggota_1 || '',
+          anggota2: dbCw.anggota_2 || ''
+        })
+      } else {
+        setHasCarwash(false)
+      }
+
+      // 5. Masukkan state bayar
+      setEditingStrukId(struk.id_struk)
+      setSelectedPayment(struk.metode_bayar || 'CASH')
+      setPaymentStatus(struk.status_bayar || 'Selesai')
+
+      if (struk.metode_bayar === 'SPLIT') {
+        setSplitCashAmount(String(struk.nominal_cash || 0))
+        setSplitQrisAmount(String(struk.nominal_qris || 0))
+      } else {
+        setSplitCashAmount('')
+        setSplitQrisAmount('')
+      }
+
+      // 6. Switch tab ke cafe agar kasir langsung melihat keranjang belanjanya
+      setActiveTab('cafe')
+      await showAlert(`Berhasil memuat transaksi #${struk.id_struk.substring(0, 8)} untuk diedit.`, 'Sukses')
+    } catch (err) {
+      console.error(err)
+      await showAlert('Gagal memuat detail transaksi: ' + err.message, 'Error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCancelEditTransaction = async () => {
+    const confirmed = await showConfirm('Apakah Anda yakin ingin membatalkan pengeditan? Keranjang belanja saat ini akan dikosongkan.', 'Batal Edit')
+    if (confirmed) {
+      setEditingStrukId(null)
+      setCart([])
+      setHasCarwash(false)
+      setCarwashForm({
+        platNomor: '',
+        model: 'Mobil',
+        noTelepon: '',
+        ukuran: 'Medium',
+        variant: 'Regular',
+        paket: 'PAKET CUCI BIASA',
+        harga: 55000,
+        gaji_pencuci: 12000,
+        kehadiran: 'hadir',
+        anggota1: anggotaOptions[0] || 'ANGGA',
+        anggota2: ''
+      })
+      setSplitCashAmount('')
+      setSplitQrisAmount('')
+    }
+  }
+
+  const handleStartEditPosExpense = (exp) => {
+    const isCasbon = exp.jenis === 'Casbon' || String(exp.kategori || '').startsWith('Casbon')
+    let employeeName = ''
+    let cleanKeterangan = exp.nama_pengeluaran || ''
+
+    if (isCasbon) {
+      employeeName = String(exp.kategori || '').replace('Casbon - ', '').trim()
+      const match = String(exp.nama_pengeluaran || '').match(/\((.*)\)/)
+      if (match && match[1]) {
+        cleanKeterangan = match[1]
+      } else if (String(exp.nama_pengeluaran || '').startsWith(`Casbon ${employeeName}`)) {
+        cleanKeterangan = String(exp.nama_pengeluaran || '').replace(`Casbon ${employeeName}`, '').replace(/^\s*-\s*/, '').trim()
+      }
+    }
+
+    setPosExpenseForm({
+      keterangan: cleanKeterangan,
+      nominal: String(exp.nominal || ''),
+      unit: exp.jenis ? exp.jenis.replace('pengeluaran ', '') : 'Cafe',
+      kategori: isCasbon ? 'Casbon' : (exp.kategori || 'Operasional'),
+      karyawan: employeeName
+    })
+    setEditingExpenseId(exp.id_pengeluaran)
+  }
+
+  const handleDeletePosExpense = async (idExp) => {
+    const confirmed = await showConfirm('Apakah Anda yakin ingin menghapus catatan pengeluaran kasir ini?', 'Hapus Pengeluaran')
+    if (!confirmed) return
+    setLoading(true)
+    setError('')
+    try {
+      const { error: delErr } = await supabase
+        .from('pengeluaran')
+        .delete()
+        .eq('id_pengeluaran', idExp)
+
+      if (delErr) throw delErr
+
+      setSuccess(true)
+      await fetchTodayExpenses()
+      await fetchCashierCash()
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err) {
+      console.error('Error deleting POS expense:', err)
+      setError(err.message || 'Gagal menghapus pengeluaran.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCancelPaidTransaction = async (idStruk) => {
+    const confirmed = await showConfirm('Apakah Anda yakin ingin MEMBATALKAN transaksi yang sudah lunas ini? Status transaksi akan diubah menjadi Batal dan stok bahan baku akan dikembalikan otomatis.', 'Batalkan Transaksi')
+    if (!confirmed) return
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+    try {
+      // 1. Update status_bayar di tabel struk menjadi 'Batal'
+      const { error: strukErr } = await supabase
+        .from('struk')
+        .update({ status_bayar: 'Batal' })
+        .eq('id_struk', idStruk)
+
+      if (strukErr) throw strukErr
+
+      // 2. Update status di tabel cafe menjadi 'Batal' (memicu trigger pengembalian stok)
+      const { error: cafeErr } = await supabase
+        .from('cafe')
+        .update({ status: 'Batal' })
+        .eq('id_struk', idStruk)
+
+      if (cafeErr) throw cafeErr
+
+      // 3. Update status di tabel carwash menjadi 'Batal'
+      const { error: cwErr } = await supabase
+        .from('carwash')
+        .update({ status: 'Batal' })
+        .eq('id_struk', idStruk)
+
+      if (cwErr) throw cwErr
+
+      setSuccess(true)
+      await fetchTodayTransactions()
+      await fetchCashierCash()
+      await fetchPendingBills()
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err) {
+      console.error('Error canceling paid transaction:', err)
+      setError(err.message || 'Gagal membatalkan transaksi.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleReactivatePaidTransaction = async (idStruk) => {
+    const confirmed = await showConfirm('Apakah Anda yakin ingin MENGAKTIFKAN KEMBALI transaksi yang telah dibatalkan ini? Status transaksi akan diubah menjadi Selesai dan stok bahan baku akan dipotong kembali.', 'Pulihkan Transaksi')
+    if (!confirmed) return
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+    try {
+      // 1. Update status_bayar di tabel struk menjadi 'Selesai'
+      const { error: strukErr } = await supabase
+        .from('struk')
+        .update({ status_bayar: 'Selesai' })
+        .eq('id_struk', idStruk)
+
+      if (strukErr) throw strukErr
+
+      // 2. Update status di tabel cafe menjadi 'Selesai' (memicu trigger pengurangan stok)
+      const { error: cafeErr } = await supabase
+        .from('cafe')
+        .update({ status: 'Selesai' })
+        .eq('id_struk', idStruk)
+
+      if (cafeErr) throw cafeErr
+
+      // 3. Update status di tabel carwash menjadi 'Selesai'
+      const { error: cwErr } = await supabase
+        .from('carwash')
+        .update({ status: 'Selesai' })
+        .eq('id_struk', idStruk)
+
+      if (cwErr) throw cwErr
+
+      setSuccess(true)
+      await fetchTodayTransactions()
+      await fetchCashierCash()
+      await fetchPendingBills()
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err) {
+      console.error('Error reactivating transaction:', err)
+      setError(err.message || 'Gagal mengaktifkan kembali transaksi.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -319,7 +795,7 @@ const CafePOS = () => {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      
+
       if (data) {
         const formatted = data.map(item => ({
           id: item.id_struk,
@@ -351,7 +827,7 @@ const CafePOS = () => {
     try {
       const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
       const localCapital = localStorage.getItem(`starting_capital_${todayDate}`)
-      
+
       if (localCapital !== null) {
         setHasStartingCapital(true)
         setTodayStartingCapital(parseFloat(localCapital) || 0)
@@ -390,70 +866,48 @@ const CafePOS = () => {
   }
 
   const handleTutupKasir = async () => {
-    if (!window.confirm('Apakah Anda yakin ingin Tutup Kasir hari ini? Ini akan merekap total omzet (Cash & QRIS) ke dalam tabel Cashflow. Lakukan ini HANYA SEKALI di akhir shift terakhir.')) return
+    const confirmed = await showConfirm('Apakah Anda yakin ingin Tutup Kasir hari ini? Ini akan merekap total omzet (Cash & QRIS) serta pengeluaran kasir ke dalam tabel Cashflow. Lakukan ini HANYA SEKALI di akhir shift terakhir.', 'Tutup Kasir (EOD)')
+    if (!confirmed) return
     setLoading(true)
     setError('')
     try {
       const todayDate = new Date().toLocaleDateString('en-CA')
-      
+
+      // 1. Ambil semua struk lunas hari ini
       const { data: strukHariIni, error: errStruk } = await supabase
         .from('struk')
         .select('total_tagihan, metode_bayar')
         .eq('status_bayar', 'Selesai')
         .eq('tanggal', todayDate)
-        
+
       if (errStruk) throw errStruk
 
-      let totalCash = 0
-      let totalQRIS = 0
-      
-      if (strukHariIni) {
-        strukHariIni.forEach(s => {
-           if (s.metode_bayar === 'CASH') totalCash += parseFloat(s.total_tagihan || 0)
-           else if (s.metode_bayar === 'QRIS') totalQRIS += parseFloat(s.total_tagihan || 0)
-        })
-      }
+      // 2. Ambil total pengeluaran kasir hari ini
+      const { data: expHariIni, error: errExp } = await supabase
+        .from('pengeluaran')
+        .select('nominal')
+        .eq('tanggal', todayDate)
 
-      const insertions = []
+      if (errExp) throw errExp
+
       const timestamp = new Date().toISOString()
-      
-      if (totalCash > 0) {
-        insertions.push({
-          id_cashflow: generateUUID(),
-          tanggal: todayDate,
-          jenis: 'Pemasukan',
-          kategori: 'Omzet Harian (CASH)',
-          pemasukan: totalCash,
-          pengeluaran: 0,
-          pos: 'SALDO CASH',
-          keterangan_transaksi: `Rekap Tutup Kasir (CASH) - Kasir: ${selectedCashier}`,
-          created_at: timestamp
-        })
-      }
-
-      if (totalQRIS > 0) {
-        insertions.push({
-          id_cashflow: generateUUID(),
-          tanggal: todayDate,
-          jenis: 'Pemasukan',
-          kategori: 'Omzet Harian (QRIS)',
-          pemasukan: totalQRIS,
-          pengeluaran: 0,
-          pos: 'SALDO REKENING Y',
-          keterangan_transaksi: `Rekap Tutup Kasir (QRIS) - Kasir: ${selectedCashier}`,
-          created_at: timestamp
-        })
-      }
+      const insertions = calculateTutupKasirRecap({
+        receipts: strukHariIni || [],
+        expenses: expHariIni || [],
+        cashierName: selectedCashier,
+        todayDate,
+        timestamp
+      })
 
       if (insertions.length > 0) {
         const { error: insErr } = await supabase.from('cashflow').insert(insertions)
         if (insErr) throw insErr
       }
 
-      window.alert('Berhasil Tutup Kasir. Rekap Omzet Harian telah masuk ke Cashflow.')
+      await showAlert('Berhasil Tutup Kasir. Rekap Omzet Harian dan Pengeluaran telah masuk ke Cashflow.', 'Sukses')
     } catch (err) {
       console.error('Error Tutup Kasir:', err)
-      window.alert('Gagal tutup kasir: ' + err.message)
+      await showAlert('Gagal tutup kasir: ' + err.message, 'Error')
     } finally {
       setLoading(false)
     }
@@ -466,11 +920,29 @@ const CafePOS = () => {
     setLoading(true)
     setError('')
     try {
+      let nCash = 0
+      let nQris = 0
+      if (settlePaymentMethod === 'SPLIT') {
+        nCash = parseFloat(splitCashAmount || 0)
+        nQris = parseFloat(splitQrisAmount || 0)
+        if (Math.abs((nCash + nQris) - settlingBill.total_harga) > 0.01) {
+          setError(`Gagal Pelunasan: Jumlah bayar Tunai (${formatRupiah(nCash)}) + QRIS (${formatRupiah(nQris)}) tidak sama dengan Total Tagihan (${formatRupiah(settlingBill.total_harga)}).`)
+          setLoading(false)
+          return
+        }
+      } else if (settlePaymentMethod === 'CASH') {
+        nCash = settlingBill.total_harga
+      } else if (settlePaymentMethod === 'QRIS') {
+        nQris = settlingBill.total_harga
+      }
+
       const { error: strukErr } = await supabase
         .from('struk')
         .update({
           status_bayar: 'Selesai',
           metode_bayar: settlePaymentMethod,
+          nominal_cash: nCash,
+          nominal_qris: nQris,
           waktu_dibayar: new Date().toISOString()
         })
         .eq('id_struk', settlingBill.id)
@@ -492,6 +964,8 @@ const CafePOS = () => {
       setSuccess(true)
       setSettlingBill(null)
       setSettlePaymentMethod('')
+      setSplitCashAmount('')
+      setSplitQrisAmount('')
       await fetchPendingBills()
       await fetchCashierCash()
       await fetchTodayTransactions()
@@ -505,7 +979,8 @@ const CafePOS = () => {
   }
 
   const handleCancelBill = async (billId) => {
-    if (!window.confirm('Apakah Anda yakin ingin membatalkan transaksi ini? Transaksi yang dibatalkan tidak dapat dikembalikan.')) return
+    const confirmed = await showConfirm('Apakah Anda yakin ingin membatalkan transaksi ini? Transaksi yang dibatalkan tidak dapat dikembalikan.', 'Batalkan Transaksi')
+    if (!confirmed) return
     setLoading(true)
     setError('')
     setSuccess(false)
@@ -664,8 +1139,8 @@ const CafePOS = () => {
 
     const totalGaji = gajiCuci + gajiPaket
 
-    setCarwashForm(prev => ({ 
-      ...prev, 
+    setCarwashForm(prev => ({
+      ...prev,
       harga: finalHarga,
       gaji_pencuci: totalGaji
     }))
@@ -673,49 +1148,21 @@ const CafePOS = () => {
 
   // Cart Handlers
   const addToCart = (menu) => {
-    setCart(prev => {
-      const existing = prev.find(item => item.nama_menu === menu.nama_menu)
-      if (existing) {
-        return prev.map(item => 
-          item.nama_menu === menu.nama_menu ? { ...item, qty: item.qty + 1 } : item
-        )
-      }
-      return [...prev, { ...menu, qty: 1 }]
-    })
+    setCart(prev => cartAdd(prev, menu))
   }
 
   const updateQty = (menuName, delta) => {
-    setCart(prev => 
-      prev.map(item => {
-        if (item.nama_menu === menuName) {
-          const newQty = item.qty + delta
-          return newQty > 0 ? { ...item, qty: newQty } : null
-        }
-        return item
-      }).filter(Boolean)
-    )
+    setCart(prev => cartUpdate(prev, menuName, delta))
   }
 
   const removeFromCart = (menuName) => {
-    setCart(prev => prev.filter(item => item.nama_menu !== menuName))
+    setCart(prev => cartRemove(prev, menuName))
   }
 
   // Calculate Totals
   const cafeTotal = cart.reduce((sum, item) => sum + (item.harga * item.qty), 0)
   const carwashTotal = hasCarwash ? parseFloat(carwashForm.harga) : 0
   const grandTotal = cafeTotal + carwashTotal
-
-  const getShiftForCashier = (cashierName) => {
-    if (!cashierName) return 'Shift 1'
-    const name = cashierName.toUpperCase()
-    if (name === 'SYAFA') return 'Shift 2'
-    if (name === 'ALEXA') return 'Shift 1'
-    if (name === 'VIRA') return 'Shift 1'
-    
-    // Default shift based on time: sebelum jam 14.00 adalah Shift 1, setelahnya Shift 2
-    const currentHour = new Date().getHours()
-    return currentHour < 14 ? 'Shift 1' : 'Shift 2'
-  }
 
   // Checkout Handler
   const handleCheckout = async () => {
@@ -745,33 +1192,85 @@ const CafePOS = () => {
     setSuccess(false)
 
     try {
-      const newStrukId = generateUUID()
+      const effectiveStrukId = editingStrukId || generateUUID()
       const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
       const currentTime = new Date().toTimeString().split(' ')[0] // HH:MM:SS
 
       // 1. Simpan Transaksi Struk
       const effectivePayment = paymentStatus === 'Selesai' ? selectedPayment : (selectedPayment || paymentMethods[0]?.nama || 'CASH')
-      const { error: strukErr } = await supabase
-        .from('struk')
-        .insert({
-          id_struk: newStrukId,
-          tanggal: todayDate,
-          jam: currentTime,
-          metode_bayar: effectivePayment,
-          status_bayar: paymentStatus,
-          kasir: selectedCashier.toUpperCase(),
-          total_tagihan: grandTotal,
-          waktu_dibuat: new Date().toISOString(),
-          waktu_dibayar: paymentStatus === 'Selesai' ? new Date().toISOString() : null
-        })
 
-      if (strukErr) throw strukErr
+      let nCash = 0
+      let nQris = 0
+      if (effectivePayment === 'SPLIT') {
+        nCash = parseFloat(splitCashAmount || 0)
+        nQris = parseFloat(splitQrisAmount || 0)
+        if (Math.abs((nCash + nQris) - grandTotal) > 0.01) {
+          setError(`Gagal Checkout: Jumlah bayar Tunai (${formatRupiah(nCash)}) + QRIS (${formatRupiah(nQris)}) tidak sama dengan Total Tagihan (${formatRupiah(grandTotal)}).`)
+          setLoading(false)
+          return
+        }
+      } else if (effectivePayment === 'CASH') {
+        nCash = grandTotal
+      } else if (effectivePayment === 'QRIS') {
+        nQris = grandTotal
+      }
+
+      if (editingStrukId) {
+        const { error: strukErr } = await supabase
+          .from('struk')
+          .update({
+            metode_bayar: effectivePayment,
+            nominal_cash: nCash,
+            nominal_qris: nQris,
+            status_bayar: paymentStatus,
+            kasir: selectedCashier.toUpperCase(),
+            total_tagihan: grandTotal,
+            waktu_dibayar: paymentStatus === 'Selesai' ? new Date().toISOString() : null
+          })
+          .eq('id_struk', effectiveStrukId)
+
+        if (strukErr) throw strukErr
+
+        // Hapus item cafe lama
+        const { error: delCafeErr } = await supabase
+          .from('cafe')
+          .delete()
+          .eq('id_struk', effectiveStrukId)
+
+        if (delCafeErr) throw delCafeErr
+
+        // Hapus item carwash lama
+        const { error: delCwErr } = await supabase
+          .from('carwash')
+          .delete()
+          .eq('id_struk', effectiveStrukId)
+
+        if (delCwErr) throw delCwErr
+      } else {
+        const { error: strukErr } = await supabase
+          .from('struk')
+          .insert({
+            id_struk: effectiveStrukId,
+            tanggal: todayDate,
+            jam: currentTime,
+            metode_bayar: effectivePayment,
+            nominal_cash: nCash,
+            nominal_qris: nQris,
+            status_bayar: paymentStatus,
+            kasir: selectedCashier.toUpperCase(),
+            total_tagihan: grandTotal,
+            waktu_dibuat: new Date().toISOString(),
+            waktu_dibayar: paymentStatus === 'Selesai' ? new Date().toISOString() : null
+          })
+
+        if (strukErr) throw strukErr
+      }
 
       // 2. Simpan Item Cafe (jika ada)
       if (cart.length > 0) {
         const cafeItems = cart.map(item => ({
           id_detail: generateUUID(),
-          id_struk: newStrukId,
+          id_struk: effectiveStrukId,
           nama_menu: item.nama_menu,
           qty: item.qty,
           harga_satuan: item.harga,
@@ -809,7 +1308,7 @@ const CafePOS = () => {
           .from('carwash')
           .insert({
             id_transaksi: generateUUID(),
-            id_struk: newStrukId,
+            id_struk: effectiveStrukId,
             tanggal: todayDate,
             jam: currentTime,
             kehadiran: carwashForm.kehadiran,
@@ -833,12 +1332,142 @@ const CafePOS = () => {
           })
 
         if (cwErr) throw cwErr
+
+        // Integrasi WA CRM: Daftarkan kontak & Kirim Kupon jika kunjungan pertama
+        const cleanPlat = (carwashForm.platNomor || '').replace(/\s+/g, '').toUpperCase();
+        if (carwashForm.noTelepon && cleanPlat) {
+          (async () => {
+            try {
+              const apiUrl = import.meta.env.VITE_WACRM_API_URL;
+              const apiKey = import.meta.env.VITE_WACRM_API_KEY;
+
+              if (apiUrl && apiKey) {
+                // Normalize phone
+                let phone = carwashForm.noTelepon.replace(/\D/g, '');
+                if (phone.startsWith('0')) {
+                  phone = '62' + phone.slice(1);
+                }
+                if (!phone.startsWith('62') && phone.length > 5) {
+                  phone = '62' + phone;
+                }
+
+                const model = carwashForm.model || 'Mobil';
+                const todayStr = new Date().toLocaleDateString('id-ID', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                });
+
+                // 1. Dapatkan jumlah kunjungan untuk plat tersebut dari database (termasuk hari ini)
+                let visitCount = 1;
+                try {
+                  const { count, error: countErr } = await supabase
+                    .from('carwash')
+                    .select('id_transaksi', { count: 'exact', head: true })
+                    .eq('plat', cleanPlat);
+                  if (!countErr && count !== null) {
+                    visitCount = count;
+                  }
+                } catch (countErr) {
+                  console.error('WACRM: Gagal menghitung jumlah kunjungan:', countErr);
+                }
+
+                // 2. Mendaftarkan / memperbarui data kehadiran pelanggan sebagai kontak di WACRM (dengan tag jumlah kehadiran & plat akumulatif)
+                try {
+                  // Kirim POST tanpa tag terlebih dahulu untuk find-or-create kontak
+                  const contactRes = await fetch(`${apiUrl}/api/v1/contacts`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                      phone: '+' + phone,
+                      name: `${cleanPlat} (${model})`,
+                      company: 'Jaya Bersama Carwash'
+                    })
+                  });
+
+                  if (contactRes.ok) {
+                    const resJson = await contactRes.json();
+                    const contactData = resJson.data || {};
+                    const contactId = contactData.id;
+
+                    // Dapatkan daftar tag lama
+                    const existingTags = Array.isArray(contactData.tags)
+                      ? contactData.tags.map(t => t.name)
+                      : [];
+
+                    // Gabungkan dengan tag baru (tambahkan Plat_X baru, Carwash, dan update Kehadiran_X)
+                    const cleanNewPlatTag = `Plat_${cleanPlat}`;
+                    const mergedTags = [
+                      ...existingTags.filter(t => !t.startsWith('Kehadiran_') && t !== cleanNewPlatTag && t !== 'Carwash'),
+                      'Carwash',
+                      cleanNewPlatTag,
+                      `Kehadiran_${visitCount}`
+                    ];
+
+                    // Perbarui tag di kontak WACRM via PATCH
+                    const patchRes = await fetch(`${apiUrl}/api/v1/contacts/${contactId}`, {
+                      method: 'PATCH',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                      },
+                      body: JSON.stringify({
+                        tags: mergedTags
+                      })
+                    });
+
+                    if (!patchRes.ok) {
+                      console.warn('WACRM: Gagal memperbarui tag kontak:', await patchRes.text());
+                    }
+                  } else {
+                    console.warn('WACRM: Gagal mendaftarkan kontak:', await contactRes.text());
+                  }
+                } catch (contactErr) {
+                  console.error('WACRM: Error saat sinkronisasi kontak:', contactErr);
+                }
+
+                // 3. Periksa apakah ini kunjungan pertama untuk plat tersebut untuk mengirim kupon
+                if (visitCount === 1) {
+                  const paket = carwashForm.paket || 'Cuci';
+                  // Kirim menggunakan template dari CRM
+                  await fetch(`${apiUrl}/api/v1/messages`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                      to: phone,
+                      type: 'template',
+                      template: {
+                        name: 'first_visit_coupon',
+                        language: 'id',
+                        params: [cleanPlat, model, paket, todayStr]
+                      },
+                      name: cleanPlat
+                    })
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('Failed to run WACRM integration:', err);
+            }
+          })();
+        }
       }
 
-      // Berhasil
+      if (editingStrukId) {
+        window.alert('Perubahan transaksi berhasil disimpan!')
+        setEditingStrukId(null)
+      }
       setSuccess(true)
       setCart([])
       setHasCarwash(false)
+      setSplitCashAmount('')
+      setSplitQrisAmount('')
       setCarwashForm(prev => ({
         ...prev,
         platNomor: '',
@@ -848,7 +1477,7 @@ const CafePOS = () => {
       await fetchPendingBills()
       await fetchCashierCash()
       await fetchTodayTransactions()
-      
+
       // Auto close success popup
       setTimeout(() => setSuccess(false), 3000)
 
@@ -861,63 +1490,11 @@ const CafePOS = () => {
   }
 
   // Filter menu
-  const filteredMenus = menuItems.filter(item => 
+  const filteredMenus = menuItems.filter(item =>
     item.kategori !== 'Carwash' &&
     item.nama_menu.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const formatRupiah = (val) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(val)
-  }
-
-  const parseDateSafe = (dateStr) => {
-    if (!dateStr) return new Date()
-    if (dateStr instanceof Date) return dateStr
-
-    const str = String(dateStr).trim()
-    if (str.includes('T')) {
-      const d = new Date(str)
-      if (!isNaN(d.getTime())) return d
-    }
-
-    const parts = str.split(/[\sT]+/)
-    const datePart = parts[0]
-    const timePart = parts[1] || '00:00:00'
-
-    const dateSplit = datePart.split(/[-/]/)
-    if (dateSplit.length === 3) {
-      let day, month, year
-      if (dateSplit[0].length === 4) {
-        year = parseInt(dateSplit[0], 10)
-        month = parseInt(dateSplit[1], 10) - 1
-        day = parseInt(dateSplit[2], 10)
-      } else {
-        day = parseInt(dateSplit[0], 10)
-        month = parseInt(dateSplit[1], 10) - 1
-        year = parseInt(dateSplit[2], 10)
-
-        if (month > 11) {
-          const temp = month
-          month = day - 1
-          day = temp + 1
-        }
-      }
-
-      const timeSplit = timePart.replace(/\./g, ':').split(':')
-      const hour = parseInt(timeSplit[0], 10) || 0
-      const minute = parseInt(timeSplit[1], 10) || 0
-      const second = parseInt(timeSplit[2], 10) || 0
-
-      return new Date(year, month, day, hour, minute, second)
-    }
-
-    const finalFallback = new Date(str)
-    return isNaN(finalFallback.getTime()) ? new Date() : finalFallback
-  }
 
   return (
     <div className="p-3 md:p-4 md:pb-6 grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 max-w-7xl mx-auto h-[calc(100dvh-4rem)] md:h-[calc(100vh-2rem)] w-full">
@@ -925,52 +1502,68 @@ const CafePOS = () => {
       <div className="lg:col-span-2 flex flex-col h-full space-y-4 min-w-0">
         {/* Header Tab & Informasi Kasir */}
         <div className="glass-panel p-4 md:p-5 rounded-xl flex flex-col gap-5 shrink-0 min-w-0">
-          
+
           {/* Bagian Atas: Navigasi Tabs */}
           <div className="flex gap-2 overflow-x-auto whitespace-nowrap md:flex-wrap md:whitespace-normal scrollbar-none w-full pb-1 shrink-0">
             <button
               onClick={() => setActiveTab('cafe')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${
-                activeTab === 'cafe' 
-                  ? 'bg-brand-emerald text-slate-950 shadow-md shadow-brand-emerald/10' 
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'cafe'
+                ? 'bg-brand-emerald text-slate-950 shadow-md shadow-brand-emerald/10'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
             >
               <Coffee size={16} />
               Menu Cafe
             </button>
             <button
               onClick={() => setActiveTab('carwash')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${
-                activeTab === 'carwash' 
-                  ? 'bg-brand-blue text-slate-950 shadow-md shadow-brand-blue/10' 
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'carwash'
+                ? 'bg-brand-blue text-slate-950 shadow-md shadow-brand-blue/10'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
             >
               <Car size={16} />
               Cuci Mobil (Carwash)
             </button>
             <button
               onClick={() => setActiveTab('pending')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${
-                activeTab === 'pending' 
-                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10' 
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'pending'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
             >
               <ShoppingCart size={16} />
               Tagihan Pending ({pendingBills.length})
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${
-                activeTab === 'history' 
-                  ? 'bg-purple-500 text-white shadow-md shadow-purple-500/10' 
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'history'
+                ? 'bg-purple-500 text-white shadow-md shadow-purple-500/10'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
             >
               <History size={16} />
               Daftar Transaksi ({todayTransactions.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('expense')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'expense'
+                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/10'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <TrendingDown size={16} />
+              Catat Pengeluaran
+            </button>
+            <button
+              onClick={() => setActiveTab('exchange')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'exchange'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/10'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <RefreshCw size={16} />
+              Tukar Uang (Cash Out)
             </button>
             <button
               onClick={handleTutupKasir}
@@ -1030,7 +1623,7 @@ const CafePOS = () => {
 
           {/* Bagian Bawah: Informasi Uang Kasir (Auto-wrap) */}
           <div className="flex flex-wrap gap-4 md:gap-6 items-center bg-slate-900/50 border border-slate-850 p-4 rounded-xl w-full">
-            
+
             <div className="flex items-center gap-3 text-purple-400 w-full sm:w-auto border-b sm:border-b-0 sm:border-r border-slate-800 pb-3 sm:pb-0 sm:pr-6">
               <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
                 <Wallet size={18} />
@@ -1060,7 +1653,7 @@ const CafePOS = () => {
               <span className="block text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Total QRIS</span>
               <span className="text-cyan-400 font-black">{formatRupiah(cashierCash.todayQRIS)}</span>
             </div>
-            
+
           </div>
         </div>
 
@@ -1090,8 +1683,8 @@ const CafePOS = () => {
                 >
                   {/* Menu Image Area */}
                   <div className="w-full h-28 relative overflow-hidden bg-slate-800">
-                    <img 
-                      src={getMenuPhoto(menu.nama_menu)} 
+                    <img
+                      src={getMenuPhoto(menu.nama_menu)}
                       alt={menu.nama_menu}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                       onError={(e) => {
@@ -1103,11 +1696,10 @@ const CafePOS = () => {
                     <div className="absolute inset-0 hidden items-center justify-center text-slate-600 bg-slate-800/50 backdrop-blur-sm">
                       <Coffee size={24} />
                     </div>
-                    <span className={`absolute top-2 left-2 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase backdrop-blur-md ${
-                      menu.is_bundling 
-                        ? 'bg-rose-500/80 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]' 
-                        : 'bg-brand-emerald/80 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]'
-                    }`}>
+                    <span className={`absolute top-2 left-2 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase backdrop-blur-md ${menu.is_bundling
+                      ? 'bg-rose-500/80 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]'
+                      : 'bg-brand-emerald/80 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                      }`}>
                       {menu.is_bundling ? 'Bundling' : menu.kategori}
                     </span>
                   </div>
@@ -1142,11 +1734,10 @@ const CafePOS = () => {
               <button
                 type="button"
                 onClick={() => setHasCarwash(!hasCarwash)}
-                className={`px-4 py-2 rounded-lg font-bold text-xs transition-colors border ${
-                  hasCarwash 
-                    ? 'bg-brand-blue text-slate-950 border-brand-blue' 
-                    : 'bg-transparent text-slate-400 border-slate-800 hover:border-slate-700'
-                }`}
+                className={`px-4 py-2 rounded-lg font-bold text-xs transition-colors border ${hasCarwash
+                  ? 'bg-brand-blue text-slate-950 border-brand-blue'
+                  : 'bg-transparent text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
               >
                 {hasCarwash ? '✓ Aktif dalam Transaksi' : '+ Tambah ke Transaksi'}
               </button>
@@ -1223,11 +1814,10 @@ const CafePOS = () => {
                         key={u}
                         type="button"
                         onClick={() => setCarwashForm(prev => ({ ...prev, ukuran: u }))}
-                        className={`py-2 rounded-lg font-bold text-xs transition-all ${
-                          carwashForm.ukuran === u 
-                            ? 'bg-brand-blue/20 text-brand-blue border border-brand-blue/40' 
-                            : 'bg-slate-900 text-slate-400 border border-slate-800/80'
-                        }`}
+                        className={`py-2 rounded-lg font-bold text-xs transition-all ${carwashForm.ukuran === u
+                          ? 'bg-brand-blue/20 text-brand-blue border border-brand-blue/40'
+                          : 'bg-slate-900 text-slate-400 border border-slate-800/80'
+                          }`}
                       >
                         {u}
                       </button>
@@ -1262,11 +1852,10 @@ const CafePOS = () => {
                         key={v}
                         type="button"
                         onClick={() => setCarwashForm(prev => ({ ...prev, variant: v }))}
-                        className={`py-2 rounded-lg font-bold text-xs transition-all ${
-                          carwashForm.variant === v 
-                            ? 'bg-brand-blue/20 text-brand-blue border border-brand-blue/40' 
-                            : 'bg-slate-900 text-slate-400 border border-slate-800/80'
-                        }`}
+                        className={`py-2 rounded-lg font-bold text-xs transition-all ${carwashForm.variant === v
+                          ? 'bg-brand-blue/20 text-brand-blue border border-brand-blue/40'
+                          : 'bg-slate-900 text-slate-400 border border-slate-800/80'
+                          }`}
                       >
                         {v}
                       </button>
@@ -1318,11 +1907,10 @@ const CafePOS = () => {
                         key={k}
                         type="button"
                         onClick={() => setCarwashForm(prev => ({ ...prev, kehadiran: k }))}
-                        className={`py-2 rounded-lg font-bold text-xs transition-all ${
-                          carwashForm.kehadiran === k 
-                            ? 'bg-brand-blue/20 text-brand-blue border border-brand-blue/40' 
-                            : 'bg-slate-900 text-slate-400 border border-slate-800/80'
-                        }`}
+                        className={`py-2 rounded-lg font-bold text-xs transition-all ${carwashForm.kehadiran === k
+                          ? 'bg-brand-blue/20 text-brand-blue border border-brand-blue/40'
+                          : 'bg-slate-900 text-slate-400 border border-slate-800/80'
+                          }`}
                       >
                         {k}
                       </button>
@@ -1375,7 +1963,7 @@ const CafePOS = () => {
                     dateStyle: 'medium',
                     timeStyle: 'short'
                   })
-                  
+
                   return (
                     <div key={bill.id} className="glass-card p-4 rounded-xl border border-slate-800 hover:border-slate-700/60 transition-all flex flex-col justify-between md:flex-row md:items-center gap-4">
                       <div className="space-y-1 flex-1">
@@ -1388,7 +1976,7 @@ const CafePOS = () => {
                           </span>
                           <span className="text-[10px] text-slate-500">{dateStr}</span>
                         </div>
-                        
+
                         {/* Bill Items Detail */}
                         <div className="text-xs text-slate-400 space-y-0.5 pt-1.5 border-t border-slate-800/50 mt-1">
                           {bill.cafe?.map((item, idx) => (
@@ -1453,6 +2041,8 @@ const CafePOS = () => {
                 {todayTransactions.map(tx => {
                   const isSelesai = tx.status_bayar === 'Selesai'
                   const isCash = tx.metode_bayar === 'CASH'
+                  const merkWash = tx.carwash?.[0]?.merk_mobil
+                  const platWash = tx.carwash?.[0]?.plat_nomor
                   return (
                     <div key={tx.id} className="glass-card p-4 rounded-xl border border-slate-800 hover:border-slate-750 transition-all flex flex-col justify-between md:flex-row md:items-center gap-4">
                       <div className="space-y-1 flex-1">
@@ -1466,24 +2056,38 @@ const CafePOS = () => {
                           <span className="text-[10px] text-slate-500 font-medium">
                             ⏱️ {tx.jam || '00:00'}
                           </span>
-                          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase ${
-                            isSelesai 
-                              ? 'bg-brand-emerald/15 text-brand-emerald' 
-                              : tx.status_bayar === 'Batal'
-                                ? 'bg-rose-500/15 text-rose-450 border border-rose-500/15'
-                                : 'bg-amber-500/15 text-amber-500'
-                          }`}>
+                          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase ${isSelesai
+                            ? 'bg-brand-emerald/15 text-brand-emerald'
+                            : tx.status_bayar === 'Batal'
+                              ? 'bg-rose-500/15 text-rose-450 border border-rose-500/15'
+                              : 'bg-amber-500/15 text-amber-500'
+                            }`}>
                             {tx.status_bayar}
                           </span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                            isCash 
-                              ? 'bg-purple-500/15 text-purple-400' 
-                              : 'bg-emerald-500/15 text-emerald-400'
-                          }`}>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${isCash
+                            ? 'bg-purple-500/15 text-purple-400'
+                            : 'bg-emerald-500/15 text-emerald-400'
+                            }`}>
                             {tx.metode_bayar}
                           </span>
+                          {merkWash && (
+                            <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded uppercase ${isSelesai
+                              ? 'bg-green-500/15 text-green-400'
+                              : 'bg-red-500/15 text-red-400'
+                              }`}>
+                              {merkWash}
+                            </span>
+                          )}
+                          {platWash && (
+                            <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded uppercase ${isSelesai
+                              ? 'bg-green-500/15 text-green-400'
+                              : 'bg-red-500/15 text-red-400'
+                              }`}>
+                              {platWash}
+                            </span>
+                          )}
                         </div>
-                        
+
                         {/* Transaction Detail Items */}
                         <div className="text-xs text-slate-400 space-y-0.5 pt-1.5 border-t border-slate-800/50 mt-1">
                           {tx.cafe?.map((item, idx) => (
@@ -1493,7 +2097,7 @@ const CafePOS = () => {
                           ))}
                           {tx.carwash?.map((item, idx) => (
                             <span key={idx} className="block text-[11px]">
-                              🧼 Carwash: {item.paket} ({item.plat_nomor || 'PLAT KOSONG'}) - ({formatRupiah(item.harga)})
+                              🧼 Carwash: {item.paket} ({item.merk_mobil || 'MOBIL'} - {item.plat_nomor || 'PLAT KOSONG'}) - ({formatRupiah(item.harga)})
                             </span>
                           ))}
                         </div>
@@ -1501,32 +2105,307 @@ const CafePOS = () => {
 
                       <div className="flex flex-col items-end gap-2 shrink-0 self-start md:self-center">
                         <span className="text-sm font-black text-white">{formatRupiah(tx.total_harga)}</span>
-                        {!isSelesai && tx.status_bayar === 'Pending' && (
-                          <div className="flex gap-1.5">
+                        <div className="flex gap-1.5 flex-wrap justify-end">
+                          {tx.status_bayar !== 'Batal' && (
                             <button
-                              onClick={() => {
-                                setSettlingBill(tx)
-                                setSettlePaymentMethod(paymentMethods[0]?.nama || 'CASH')
-                              }}
-                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition-colors flex items-center gap-1"
+                              onClick={() => handleStartEditTransaction({
+                                id_struk: tx.id,
+                                metode_bayar: tx.metode_bayar,
+                                status_bayar: tx.status_bayar,
+                                nominal_cash: tx.nominal_cash,
+                                nominal_qris: tx.nominal_qris
+                              })}
+                              className="px-2.5 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold rounded text-[10px] transition-colors"
                             >
-                              <Check size={10} />
-                              Lunasi
+                              Edit
                             </button>
+                          )}
+                          {!isSelesai && tx.status_bayar === 'Pending' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setSettlingBill(tx)
+                                  setSettlePaymentMethod(paymentMethods[0]?.nama || 'CASH')
+                                }}
+                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition-colors flex items-center gap-1"
+                              >
+                                <Check size={10} />
+                                Lunasi
+                              </button>
+                              <button
+                                onClick={() => handleCancelBill(tx.id)}
+                                className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/30 text-rose-400 font-bold rounded text-[10px] transition-colors"
+                              >
+                                Batalkan
+                              </button>
+                            </>
+                          )}
+                          {isSelesai && tx.status_bayar === 'Selesai' && (
                             <button
-                              onClick={() => handleCancelBill(tx.id)}
-                              className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/30 text-rose-400 font-bold rounded text-[10px] transition-colors"
+                              onClick={() => handleCancelPaidTransaction(tx.id)}
+                              className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/30 text-rose-450 font-bold rounded text-[10px] transition-colors"
                             >
                               Batalkan
                             </button>
-                          </div>
-                        )}
+                          )}
+                          {tx.status_bayar === 'Batal' && (
+                            <button
+                              onClick={() => handleReactivatePaidTransaction(tx.id)}
+                              className="px-2.5 py-1 bg-brand-emerald/10 hover:bg-brand-emerald/20 border border-brand-emerald/20 hover:border-brand-emerald/30 text-brand-emerald font-bold rounded text-[10px] transition-colors"
+                            >
+                              Pulihkan
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Tab 5: Catat Pengeluaran Kasir */}
+        {activeTab === 'expense' && (
+          <div className="glass-panel p-6 rounded-xl border border-slate-800 flex-1 flex flex-col min-h-0 overflow-y-auto space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-white">Catat Pengeluaran Laci Kasir</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Catat pengeluaran operasional hari ini menggunakan uang dari laci kasir</p>
+            </div>
+
+            <form onSubmit={handleSavePosExpense} className="space-y-4 max-w-xl shrink-0">
+              <div className={`grid grid-cols-1 ${posExpenseForm.kategori === 'Casbon' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Unit Usaha</label>
+                  <select
+                    value={posExpenseForm.unit}
+                    onChange={(e) => setPosExpenseForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                  >
+                    <option value="Cafe">Cafe</option>
+                    <option value="Carwash">Carwash</option>
+                    <option value="Bersama">Kedua Usaha (Bersama)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Kategori</label>
+                  <select
+                    value={posExpenseForm.kategori}
+                    onChange={(e) => setPosExpenseForm(prev => ({ ...prev, kategori: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                  >
+                    <option value="Operasional">Operasional</option>
+                    <option value="Bahan Baku">Bahan Baku</option>
+                    <option value="Casbon">Casbon Karyawan</option>
+                    <option value="Ambil Uang Paketan">Ambil Uang Paketan</option>
+                    <option value="Lain-lain">Lain-lain</option>
+                  </select>
+                </div>
+
+                {['Casbon', 'Ambil Uang Paketan'].includes(posExpenseForm.kategori) && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Karyawan</label>
+                    <select
+                      value={posExpenseForm.karyawan}
+                      onChange={(e) => setPosExpenseForm(prev => ({ ...prev, karyawan: e.target.value }))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                      required
+                    >
+                      <option value="">-- Pilih Karyawan --</option>
+                      {anggotaOptions.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Keterangan / Nama Pengeluaran</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Beli es batu, isi ulang gas, sabun cuci"
+                  value={posExpenseForm.keterangan}
+                  onChange={(e) => setPosExpenseForm(prev => ({ ...prev, keterangan: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Nominal (Rp)</label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={posExpenseForm.nominal}
+                  onChange={(e) => setPosExpenseForm(prev => ({ ...prev, nominal: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-brand-emerald"
+                />
+              </div>
+
+              {['Casbon', 'Ambil Uang Paketan'].includes(posExpenseForm.kategori) && (
+                <p className="text-[10px] text-amber-500 font-medium italic">
+                  * Catatan: Input satu per satu per karyawan jika kasbon/ambil paketan diwakili atau diambil oleh lebih dari 1 orang.
+                </p>
+              )}
+
+              <div className="flex gap-3">
+                {editingExpenseId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingExpenseId(null)
+                      setPosExpenseForm({
+                        keterangan: '',
+                        nominal: '',
+                        unit: 'Cafe',
+                        kategori: 'Operasional',
+                        karyawan: ''
+                      })
+                    }}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-350 font-bold rounded-lg text-sm transition-all"
+                  >
+                    Batal Edit
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 text-slate-950 font-bold rounded-lg text-sm transition-all"
+                >
+                  {loading ? 'Menyimpan...' : (editingExpenseId ? 'Simpan Perubahan' : 'Catat Pengeluaran')}
+                </button>
+              </div>
+            </form>
+
+            <div className="border-t border-slate-800/80 pt-6">
+              <h4 className="font-bold text-sm text-white mb-3">Daftar Pengeluaran Hari Ini</h4>
+              {todayExpenses.length === 0 ? (
+                <p className="text-xs text-slate-500">Belum ada pengeluaran kasir hari ini.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-500 text-xs font-bold uppercase pb-2">
+                        <th className="pb-2">Jam</th>
+                        <th className="pb-2">Keterangan</th>
+                        <th className="pb-2">Unit</th>
+                        <th className="pb-2">Kategori</th>
+                        <th className="pb-2 text-right">Nominal</th>
+                        <th className="pb-2 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {todayExpenses.map((exp) => (
+                        <tr key={exp.id_pengeluaran} className="text-xs text-slate-350 hover:bg-slate-800/20">
+                          <td className="py-2.5 font-mono text-slate-500">{exp.jam?.substring(0, 5) || '--:--'}</td>
+                          <td className="py-2.5 font-medium text-slate-200">{exp.nama_pengeluaran}</td>
+                          <td className="py-2.5 uppercase font-bold text-[10px] text-slate-400">{exp.jenis?.replace('pengeluaran ', '') || 'Cafe'}</td>
+                          <td className="py-2.5">{exp.kategori}</td>
+                          <td className="py-2.5 text-right font-bold text-rose-450">{formatRupiah(exp.nominal)}</td>
+                          <td className="py-2.5 text-center flex justify-center gap-1.5">
+                            <button
+                              onClick={() => handleStartEditPosExpense(exp)}
+                              className="text-amber-500 hover:text-amber-400 font-bold px-2 py-1"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeletePosExpense(exp.id_pengeluaran)}
+                              className="text-rose-500 hover:text-rose-450 font-bold px-2 py-1"
+                            >
+                              Hapus
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 6: Tukar Uang / Tarik Tunai QRIS */}
+        {activeTab === 'exchange' && (
+          <div className="glass-panel p-6 rounded-xl border border-slate-800 flex-1 flex flex-col min-h-0 overflow-y-auto space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-white">Tukar Uang (Cash Out / QRIS ke Tunai)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Catat transaksi penukaran uang: pelanggan transfer QRIS ke toko, kasir memberikan uang tunai dari laci</p>
+            </div>
+
+            <form onSubmit={handleSaveExchange} className="space-y-4 max-w-xl shrink-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Jumlah Uang Tunai Diberikan (Cash)</label>
+                  <input
+                    type="number"
+                    value={exchangeCash}
+                    onChange={(e) => {
+                      const cashVal = e.target.value
+                      setExchangeCash(cashVal)
+                      // Auto-populate QRIS amount with same amount
+                      if (!exchangeQris || parseFloat(exchangeQris) === parseFloat(exchangeCash || 0)) {
+                        setExchangeQris(cashVal)
+                      }
+                    }}
+                    placeholder="Contoh: 100000"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald font-mono font-bold"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Jumlah Transfer QRIS Diterima</label>
+                  <input
+                    type="number"
+                    value={exchangeQris}
+                    onChange={(e) => setExchangeQris(e.target.value)}
+                    placeholder="Contoh: 102000"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald font-mono font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Nama Pelanggan (Keterangan)</label>
+                  <input
+                    type="text"
+                    value={exchangeCustomer}
+                    onChange={(e) => setExchangeCustomer(e.target.value)}
+                    placeholder="Contoh: Budi (Tukar Uang)"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Estimasi Biaya Admin (Pendapatan Toko)</label>
+                  <div className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-brand-emerald text-sm font-mono font-bold">
+                    {formatRupiah(Math.max(0, parseFloat(exchangeQris || 0) - parseFloat(exchangeCash || 0)))}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-800 text-slate-950 font-bold rounded-lg text-sm transition-all"
+              >
+                {loading ? 'Memproses...' : 'Catat Penukaran Uang'}
+              </button>
+            </form>
+
+            <div className="border-t border-slate-800/80 pt-6">
+              <h4 className="font-bold text-sm text-white mb-1">Informasi Cara Kerja Tukar Uang:</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Fitur ini mencatat uang masuk QRIS ke rekening bank Anda (menambah saldo QRIS) dan uang keluar Cash dari laci kasir (mengurangi expected cash laci).
+                Selisih antara QRIS diterima dan Cash diberikan otomatis tercatat sebagai pendapatan admin (laba bersih bertambah).
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -1642,23 +2521,81 @@ const CafePOS = () => {
             </div>
           </div>
 
+          {selectedPayment === 'SPLIT' && (
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-850 space-y-3 my-1">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Pembayaran Terpisah (Split)</span>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-semibold block">Tunai (Cash):</label>
+                <input
+                  type="number"
+                  value={splitCashAmount}
+                  onChange={(e) => {
+                    const cashVal = e.target.value
+                    setSplitCashAmount(cashVal)
+                    const parsed = parseFloat(cashVal || 0)
+                    setSplitQrisAmount(Math.max(0, grandTotal - parsed).toString())
+                  }}
+                  placeholder="Contoh: 50000"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-semibold block">Non-Tunai (QRIS):</label>
+                <input
+                  type="number"
+                  value={splitQrisAmount}
+                  onChange={(e) => {
+                    const qrisVal = e.target.value
+                    setSplitQrisAmount(qrisVal)
+                    const parsed = parseFloat(qrisVal || 0)
+                    setSplitCashAmount(Math.max(0, grandTotal - parsed).toString())
+                  }}
+                  placeholder="Contoh: 50000"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                />
+              </div>
+            </div>
+          )}
+
+          {editingStrukId && (
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 my-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-400">Mode Edit Aktif</span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-350 px-2 py-0.5 rounded-md font-mono">#{editingStrukId.substring(0, 8)}</span>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Anda sedang mengubah transaksi ini. Klik "Simpan Perubahan" untuk memperbarui database.
+              </p>
+              <button
+                type="button"
+                onClick={handleCancelEditTransaction}
+                className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-350 font-bold rounded-lg text-[10px] transition-colors"
+              >
+                Batal Edit
+              </button>
+            </div>
+          )}
+
           <button
             onClick={handleCheckout}
             disabled={loading || (cart.length === 0 && !hasCarwash)}
             className="w-full py-3 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-extrabold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 animate-pulse-glow"
           >
-            {loading ? 'Memproses Transaksi...' : `Simpan & Cetak (${paymentStatus})`}
+            {loading ? 'Memproses Transaksi...' : editingStrukId ? 'Simpan Perubahan' : `Simpan & Cetak (${paymentStatus})`}
           </button>
         </div>
       </div>
 
       {/* Floating Cart Bar for Mobile */}
       {(cart.length > 0 || hasCarwash) && !showMobileCart ? (
-        <div className="lg:hidden fixed bottom-18 left-4 right-4 z-40 bg-slate-900/95 backdrop-blur-md border border-brand-emerald/30 p-3.5 rounded-2xl flex items-center justify-between shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_15px_rgba(16,185,129,0.15)] animate-slide-up">
-          <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowMobileCart(true)}
+          className="lg:hidden fixed bottom-18 left-4 right-4 z-40 bg-slate-900/95 backdrop-blur-md border border-brand-emerald/30 p-3.5 rounded-2xl flex items-center justify-between shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_15px_rgba(16,185,129,0.15)] animate-slide-up text-left group transition-transform active:scale-[0.98]"
+        >
+          <div className="flex items-center gap-3 pointer-events-none">
             <div className="w-10 h-10 rounded-xl bg-brand-emerald/10 flex items-center justify-center text-brand-emerald relative">
               <ShoppingCart size={18} />
-              <span className="absolute -top-1.5 -right-1.5 bg-brand-emerald text-slate-950 text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center">
+              <span className="absolute -top-1.5 -right-1.5 bg-brand-emerald text-slate-950 text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
                 {cart.reduce((sum, item) => sum + item.qty, 0) + (hasCarwash ? 1 : 0)}
               </span>
             </div>
@@ -1667,13 +2604,10 @@ const CafePOS = () => {
               <span className="text-sm font-black text-brand-emerald">{formatRupiah(grandTotal)}</span>
             </div>
           </div>
-          <button
-            onClick={() => setShowMobileCart(true)}
-            className="px-4 py-2 bg-brand-emerald hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs transition-all active:scale-95 flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse-glow"
-          >
-            Selesaikan <ChevronRight size={14} />
-          </button>
-        </div>
+          <div className="px-3 py-2 bg-brand-emerald group-hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.3)] pointer-events-none">
+            Lihat Detail <ChevronUp size={14} />
+          </div>
+        </button>
       ) : null}
 
       {/* Mobile Cart Overlay/Drawer */}
@@ -1681,7 +2615,7 @@ const CafePOS = () => {
         <div className="lg:hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col justify-end animate-fade-in">
           {/* Backdrop click area to close */}
           <div className="absolute inset-0" onClick={() => setShowMobileCart(false)}></div>
-          
+
           <div className="relative bg-slate-900 border-t border-slate-800 rounded-t-3xl max-h-[85vh] flex flex-col p-6 animate-slide-up shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
             {/* Header of Mobile Cart */}
             <div className="flex items-center justify-between border-b border-slate-850 pb-4 mb-4">
@@ -1689,14 +2623,14 @@ const CafePOS = () => {
                 <ShoppingCart className="text-brand-emerald" size={20} />
                 <h3 className="font-bold text-lg text-white">Struk Belanja ({cart.reduce((sum, item) => sum + item.qty, 0) + (hasCarwash ? 1 : 0)} item)</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowMobileCart(false)}
                 className="text-xs font-bold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 transition-colors"
               >
                 Tutup
               </button>
             </div>
-            
+
             {/* Alert Popups in Mobile Cart */}
             {success && (
               <div className="mb-4 p-4 rounded-xl bg-brand-emerald/10 border border-brand-emerald/20 text-brand-emerald text-xs flex items-center gap-3 shrink-0">
@@ -1790,6 +2724,28 @@ const CafePOS = () => {
                 </div>
               </div>
 
+              {editingStrukId && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 my-1 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-400">Mode Edit Aktif</span>
+                    <span className="text-[10px] bg-amber-500/20 text-amber-350 px-2 py-0.5 rounded-md font-mono">#{editingStrukId.substring(0, 8)}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Anda sedang mengubah transaksi ini. Klik "Simpan Perubahan" untuk memperbarui database.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCancelEditTransaction();
+                      setShowMobileCart(false);
+                    }}
+                    className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-350 font-bold rounded-lg text-[10px] transition-colors"
+                  >
+                    Batal Edit
+                  </button>
+                </div>
+              )}
+
               <button
                 onClick={() => {
                   handleCheckout();
@@ -1798,7 +2754,7 @@ const CafePOS = () => {
                 disabled={loading || (cart.length === 0 && !hasCarwash)}
                 className="w-full py-3 bg-brand-emerald hover:bg-emerald-450 active:bg-emerald-600 text-slate-950 font-extrabold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 animate-pulse-glow"
               >
-                {loading ? 'Memproses Transaksi...' : `Simpan & Cetak (${paymentStatus})`}
+                {loading ? 'Memproses Transaksi...' : editingStrukId ? 'Simpan Perubahan' : `Simpan & Cetak (${paymentStatus})`}
               </button>
             </div>
           </div>
@@ -1813,8 +2769,8 @@ const CafePOS = () => {
               <h3 className="text-lg font-bold text-white">
                 Pelunasan Tagihan #{settlingBill.id.substring(0, 8)}
               </h3>
-              <button 
-                onClick={() => setSettlingBill(null)} 
+              <button
+                onClick={() => setSettlingBill(null)}
                 className="text-slate-400 hover:text-slate-200"
               >
                 ✕
@@ -1848,6 +2804,44 @@ const CafePOS = () => {
                   ))}
                 </select>
               </div>
+
+              {settlePaymentMethod === 'SPLIT' && (
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-850 space-y-3 my-1">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block text-slate-400">Pembayaran Terpisah (Split)</span>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-semibold block">Tunai (Cash):</label>
+                    <input
+                      type="number"
+                      value={splitCashAmount}
+                      onChange={(e) => {
+                        const cashVal = e.target.value
+                        setSplitCashAmount(cashVal)
+                        const parsed = parseFloat(cashVal || 0)
+                        setSplitQrisAmount(Math.max(0, settlingBill.total_harga - parsed).toString())
+                      }}
+                      placeholder="Contoh: 50000"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-semibold block">Non-Tunai (QRIS):</label>
+                    <input
+                      type="number"
+                      value={splitQrisAmount}
+                      onChange={(e) => {
+                        const qrisVal = e.target.value
+                        setSplitQrisAmount(qrisVal)
+                        const parsed = parseFloat(qrisVal || 0)
+                        setSplitCashAmount(Math.max(0, settlingBill.total_harga - parsed).toString())
+                      }}
+                      placeholder="Contoh: 50000"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 mt-4">
                 <button
@@ -1912,6 +2906,58 @@ const CafePOS = () => {
                 {loading ? 'Menyimpan...' : 'Konfirmasi & Mulai Shift'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM MODAL: Alert / Confirm */}
+      {customAlert && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fade-in">
+          <div className="glass-panel w-full max-w-sm p-6 rounded-2xl shadow-2xl border border-slate-800 shadow-[0_0_50px_rgba(16,185,129,0.08)] animate-pop-in text-center">
+            <div className="mb-4">
+              {customAlert.title === 'Sukses' ? (
+                <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center">
+                  <CheckCircle className="text-emerald-400" size={24} />
+                </div>
+              ) : customAlert.title === 'Error' || customAlert.title === 'Hapus Pengeluaran' || customAlert.title === 'Batalkan Transaksi' ? (
+                <div className="w-12 h-12 mx-auto rounded-full bg-rose-500/10 flex items-center justify-center">
+                  <AlertCircle className="text-rose-400" size={24} />
+                </div>
+              ) : (
+                <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <AlertCircle className="text-amber-400" size={24} />
+                </div>
+              )}
+            </div>
+
+            <h4 className="text-base font-extrabold text-white mb-2">
+              {customAlert.title}
+            </h4>
+            <p className="text-xs text-slate-350 leading-relaxed mb-6">
+              {customAlert.message}
+            </p>
+
+            <div className="flex justify-center gap-3">
+              {customAlert.type === 'confirm' && (
+                <button
+                  type="button"
+                  onClick={customAlert.onCancel}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold rounded-xl text-xs transition-all w-24"
+                >
+                  Batal
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={customAlert.onConfirm}
+                className={`px-4 py-2 active:scale-95 font-bold rounded-xl text-xs transition-all w-24 ${customAlert.title === 'Error' || customAlert.title === 'Hapus Pengeluaran' || customAlert.title === 'Batalkan Transaksi'
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                  : 'bg-brand-emerald hover:bg-emerald-500 text-slate-950'
+                  }`}
+              >
+                {customAlert.type === 'confirm' ? 'Ya' : 'OK'}
+              </button>
+            </div>
           </div>
         </div>
       )}
