@@ -118,8 +118,13 @@ const CafePOS = () => {
   const [exchangeQris, setExchangeQris] = useState('')
   const [exchangeCustomer, setExchangeCustomer] = useState('')
 
-  // Edit Transaksi state
   const [editingStrukId, setEditingStrukId] = useState(null)
+
+  // State Diskon & Kembalian
+  const [discounts, setDiscounts] = useState([])
+  const [selectedDiskonCarwash, setSelectedDiskonCarwash] = useState(null)
+  const [selectedDiskonCafe, setSelectedDiskonCafe] = useState(null)
+  const [uangDiterima, setUangDiterima] = useState('')
 
   // Custom Alert / Confirm Modal State
   const [customAlert, setCustomAlert] = useState(null)
@@ -205,14 +210,14 @@ const CafePOS = () => {
   ]
   const [anggotaOptions, setAnggotaOptions] = useState(['ANGGA', 'FERRY', 'RAHMAN', 'FAISAL', 'BAGUS', 'VICKY', 'NOPAL', 'EZA'])
 
-  // Load Master Data
   const loadMasterData = async () => {
     try {
-      const [dbCashiers, dbPayments, dbMenu, dbResep] = await Promise.all([
+      const [dbCashiers, dbPayments, dbMenu, dbResep, dbDiskon] = await Promise.all([
         supabase.from('kasir').select('*').eq('is_active', true),
         supabase.from('metode_bayar').select('*').eq('is_active', true),
         supabase.from('daftar_harga_menu').select('*'),
-        supabase.from('resep').select('*')
+        supabase.from('resep').select('*'),
+        supabase.from('diskon').select('*').order('created_at', { ascending: false })
       ])
 
       const defaultCashiers = dbCashiers.data || []
@@ -221,6 +226,7 @@ const CafePOS = () => {
         ? dbMenu.data.map(m => ({ ...m, nama_menu: m.daftar_menu }))
         : []
       const defaultResep = dbResep.data || []
+      const defaultDiskon = dbDiskon.data || []
 
       if (!defaultPayments.some(p => p.nama === 'SPLIT')) {
         defaultPayments.push({ nama: 'SPLIT', is_active: true })
@@ -230,6 +236,7 @@ const CafePOS = () => {
       setPaymentMethods(defaultPayments)
       setMenuItems(defaultMenus)
       setResepList(defaultResep)
+      setDiscounts(defaultDiskon)
 
       // Fetch dynamic washing employees from karyawan_cuci
       try {
@@ -604,6 +611,19 @@ const CafePOS = () => {
         setSplitQrisAmount('')
       }
 
+      if (struk.diskon_carwash && parseFloat(struk.diskon_carwash) > 0) {
+        setSelectedDiskonCarwash({ nama: 'Diskon Terpasang', nominal: parseFloat(struk.diskon_carwash), tipe: 'Rupiah' })
+      } else {
+        setSelectedDiskonCarwash(null)
+      }
+
+      if (struk.diskon_cafe && parseFloat(struk.diskon_cafe) > 0) {
+        setSelectedDiskonCafe({ nama: 'Diskon Terpasang', nominal: parseFloat(struk.diskon_cafe), tipe: 'Rupiah' })
+      } else {
+        setSelectedDiskonCafe(null)
+      }
+      setUangDiterima('')
+
       // 6. Switch tab ke cafe agar kasir langsung melihat keranjang belanjanya
       setActiveTab('cafe')
       await showAlert(`Berhasil memuat transaksi #${struk.id_struk.substring(0, 8)} untuk diedit.`, 'Sukses')
@@ -621,6 +641,9 @@ const CafePOS = () => {
       setEditingStrukId(null)
       setCart([])
       setHasCarwash(false)
+      setSelectedDiskonCarwash(null)
+      setSelectedDiskonCafe(null)
+      setUangDiterima('')
       setCarwashForm({
         platNomor: '',
         model: 'Mobil',
@@ -1162,7 +1185,23 @@ const CafePOS = () => {
   // Calculate Totals
   const cafeTotal = cart.reduce((sum, item) => sum + (item.harga * item.qty), 0)
   const carwashTotal = hasCarwash ? parseFloat(carwashForm.harga) : 0
-  const grandTotal = cafeTotal + carwashTotal
+  
+  const diskonCarwashNominal = selectedDiskonCarwash 
+    ? (selectedDiskonCarwash.tipe === 'Persen' 
+        ? (carwashTotal * parseFloat(selectedDiskonCarwash.nominal)) / 100 
+        : parseFloat(selectedDiskonCarwash.nominal))
+    : 0;
+
+  const diskonCafeNominal = selectedDiskonCafe 
+    ? (selectedDiskonCafe.tipe === 'Persen' 
+        ? (cafeTotal * parseFloat(selectedDiskonCafe.nominal)) / 100 
+        : parseFloat(selectedDiskonCafe.nominal))
+    : 0;
+
+  const grandTotal = Math.max(0, cafeTotal - diskonCafeNominal) + Math.max(0, carwashTotal - diskonCarwashNominal)
+  
+  const kembalian = uangDiterima ? parseFloat(uangDiterima) - grandTotal : 0
+  const isUangKurang = uangDiterima && kembalian < 0
 
   // Checkout Handler
   const handleCheckout = async () => {
@@ -1224,6 +1263,8 @@ const CafePOS = () => {
             nominal_qris: nQris,
             status_bayar: paymentStatus,
             kasir: selectedCashier.toUpperCase(),
+            diskon_carwash: diskonCarwashNominal,
+            diskon_cafe: diskonCafeNominal,
             total_tagihan: grandTotal,
             waktu_dibayar: paymentStatus === 'Selesai' ? new Date().toISOString() : null
           })
@@ -1258,6 +1299,8 @@ const CafePOS = () => {
             nominal_qris: nQris,
             status_bayar: paymentStatus,
             kasir: selectedCashier.toUpperCase(),
+            diskon_carwash: diskonCarwashNominal,
+            diskon_cafe: diskonCafeNominal,
             total_tagihan: grandTotal,
             waktu_dibuat: new Date().toISOString(),
             waktu_dibayar: paymentStatus === 'Selesai' ? new Date().toISOString() : null
@@ -1466,6 +1509,9 @@ const CafePOS = () => {
       setSuccess(true)
       setCart([])
       setHasCarwash(false)
+      setSelectedDiskonCarwash(null)
+      setSelectedDiskonCafe(null)
+      setUangDiterima('')
       setSplitCashAmount('')
       setSplitQrisAmount('')
       setCarwashForm(prev => ({
@@ -2509,82 +2555,171 @@ const CafePOS = () => {
                 <span>{formatRupiah(cafeTotal)}</span>
               </div>
             )}
-            {hasCarwash && (
-              <div className="flex justify-between">
-                <span>Total Carwash</span>
-                <span>{formatRupiah(carwashTotal)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-slate-800/50">
-              <span>Total Bayar</span>
-              <span className="text-brand-emerald">{formatRupiah(grandTotal)}</span>
-            </div>
-          </div>
+             {hasCarwash && (
+               <div className="flex justify-between">
+                 <span>Total Carwash</span>
+                 <span>{formatRupiah(carwashTotal)}</span>
+               </div>
+             )}
+             
+             {/* Dropdown Diskon Carwash */}
+             {hasCarwash && (
+               <div className="space-y-1 py-1">
+                 <label className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Diskon Carwash</label>
+                 <select
+                   value={selectedDiskonCarwash ? selectedDiskonCarwash.id_diskon : ''}
+                   onChange={(e) => {
+                     const id = e.target.value
+                     if (!id) setSelectedDiskonCarwash(null)
+                     else {
+                       const found = discounts.find(d => d.id_diskon === id)
+                       setSelectedDiskonCarwash(found || null)
+                     }
+                   }}
+                   className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-semibold focus:outline-none focus:border-brand-blue"
+                 >
+                   <option value="">Tanpa Diskon</option>
+                   {discounts.filter(d => d.kategori === 'Carwash' || d.kategori === 'Semua').map(d => (
+                     <option key={d.id_diskon} value={d.id_diskon}>
+                       {d.nama} ({d.tipe === 'Persen' ? `${d.nominal}%` : formatRupiah(d.nominal)})
+                     </option>
+                   ))}
+                 </select>
+                 {diskonCarwashNominal > 0 && (
+                   <span className="text-[10px] text-brand-emerald font-semibold block">Potongan: -{formatRupiah(diskonCarwashNominal)}</span>
+                 )}
+               </div>
+             )}
 
-          {selectedPayment === 'SPLIT' && (
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-850 space-y-3 my-1">
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Pembayaran Terpisah (Split)</span>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-semibold block">Tunai (Cash):</label>
-                <input
-                  type="number"
-                  value={splitCashAmount}
-                  onChange={(e) => {
-                    const cashVal = e.target.value
-                    setSplitCashAmount(cashVal)
-                    const parsed = parseFloat(cashVal || 0)
-                    setSplitQrisAmount(Math.max(0, grandTotal - parsed).toString())
-                  }}
-                  placeholder="Contoh: 50000"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-semibold block">Non-Tunai (QRIS):</label>
-                <input
-                  type="number"
-                  value={splitQrisAmount}
-                  onChange={(e) => {
-                    const qrisVal = e.target.value
-                    setSplitQrisAmount(qrisVal)
-                    const parsed = parseFloat(qrisVal || 0)
-                    setSplitCashAmount(Math.max(0, grandTotal - parsed).toString())
-                  }}
-                  placeholder="Contoh: 50000"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
-                />
-              </div>
-            </div>
-          )}
+             {/* Dropdown Diskon Cafe */}
+             {cart.length > 0 && (
+               <div className="space-y-1 py-1">
+                 <label className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Diskon Cafe</label>
+                 <select
+                   value={selectedDiskonCafe ? selectedDiskonCafe.id_diskon : ''}
+                   onChange={(e) => {
+                     const id = e.target.value
+                     if (!id) setSelectedDiskonCafe(null)
+                     else {
+                       const found = discounts.find(d => d.id_diskon === id)
+                       setSelectedDiskonCafe(found || null)
+                     }
+                   }}
+                   className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-semibold focus:outline-none focus:border-brand-blue"
+                 >
+                   <option value="">Tanpa Diskon</option>
+                   {discounts.filter(d => d.kategori === 'Cafe' || d.kategori === 'Semua').map(d => (
+                     <option key={d.id_diskon} value={d.id_diskon}>
+                       {d.nama} ({d.tipe === 'Persen' ? `${d.nominal}%` : formatRupiah(d.nominal)})
+                     </option>
+                   ))}
+                 </select>
+                 {diskonCafeNominal > 0 && (
+                   <span className="text-[10px] text-brand-emerald font-semibold block">Potongan: -{formatRupiah(diskonCafeNominal)}</span>
+                 )}
+               </div>
+             )}
 
-          {editingStrukId && (
-            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 my-1 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-400">Mode Edit Aktif</span>
-                <span className="text-[10px] bg-amber-500/20 text-amber-350 px-2 py-0.5 rounded-md font-mono">#{editingStrukId.substring(0, 8)}</span>
-              </div>
-              <p className="text-[10px] text-slate-400 leading-relaxed">
-                Anda sedang mengubah transaksi ini. Klik "Simpan Perubahan" untuk memperbarui database.
-              </p>
-              <button
-                type="button"
-                onClick={handleCancelEditTransaction}
-                className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-350 font-bold rounded-lg text-[10px] transition-colors"
-              >
-                Batal Edit
-              </button>
-            </div>
-          )}
+             <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-slate-800/50">
+               <span>Total Bayar</span>
+               <span className="text-brand-emerald">{formatRupiah(grandTotal)}</span>
+             </div>
+           </div>
 
-          <button
-            onClick={handleCheckout}
-            disabled={loading || (cart.length === 0 && !hasCarwash)}
-            className="w-full py-3 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-extrabold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 animate-pulse-glow"
-          >
-            {loading ? 'Memproses Transaksi...' : editingStrukId ? 'Simpan Perubahan' : `Simpan & Cetak (${paymentStatus})`}
-          </button>
-        </div>
-      </div>
+           {selectedPayment === 'SPLIT' && (
+             <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-850 space-y-3 my-1">
+               <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Pembayaran Terpisah (Split)</span>
+               <div className="space-y-1">
+                 <label className="text-[10px] text-slate-400 font-semibold block">Tunai (Cash):</label>
+                 <input
+                   type="number"
+                   value={splitCashAmount}
+                   onChange={(e) => {
+                     const cashVal = e.target.value
+                     setSplitCashAmount(cashVal)
+                     const parsed = parseFloat(cashVal || 0)
+                     setSplitQrisAmount(Math.max(0, grandTotal - parsed).toString())
+                   }}
+                   placeholder="Contoh: 50000"
+                   className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                 />
+               </div>
+               <div className="space-y-1">
+                 <label className="text-[10px] text-slate-400 font-semibold block">Non-Tunai (QRIS):</label>
+                 <input
+                   type="number"
+                   value={splitQrisAmount}
+                   onChange={(e) => {
+                     const qrisVal = e.target.value
+                     setSplitQrisAmount(qrisVal)
+                     const parsed = parseFloat(qrisVal || 0)
+                     setSplitCashAmount(Math.max(0, grandTotal - parsed).toString())
+                   }}
+                   placeholder="Contoh: 50000"
+                   className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                 />
+               </div>
+             </div>
+           )}
+
+           {/* Input Uang Diterima & Kembalian */}
+           {paymentStatus === 'Selesai' && (selectedPayment === 'CASH' || selectedPayment === 'SPLIT') && (
+             <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-850 space-y-3 my-1">
+               <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Kalkulator Kembalian</span>
+               <div className="space-y-1">
+                 <label className="text-[10px] text-slate-400 font-semibold block">Uang Diterima (Cash):</label>
+                 <div className="relative">
+                   <span className="absolute left-3 top-1.5 text-xs text-slate-500 font-bold font-mono">Rp</span>
+                   <input
+                     type="number"
+                     value={uangDiterima}
+                     onChange={(e) => setUangDiterima(e.target.value)}
+                     placeholder="Contoh: 100000"
+                     className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-blue"
+                   />
+                 </div>
+               </div>
+               {uangDiterima && (
+                 <div className="flex justify-between items-center text-xs border-t border-slate-800/50 pt-2">
+                   <span className="text-slate-400">Kembalian:</span>
+                   {isUangKurang ? (
+                     <span className="font-mono font-bold text-rose-450 uppercase text-[10px]">Kurang {formatRupiah(Math.abs(kembalian))}</span>
+                   ) : (
+                     <span className="font-mono font-black text-brand-emerald text-sm">{formatRupiah(kembalian)}</span>
+                   )}
+                 </div>
+               )}
+             </div>
+           )}
+
+           {editingStrukId && (
+             <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 my-1 text-xs">
+               <div className="flex items-center justify-between">
+                 <span className="text-xs font-bold text-amber-400">Mode Edit Aktif</span>
+                 <span className="text-[10px] bg-amber-500/20 text-amber-350 px-2 py-0.5 rounded-md font-mono">#{editingStrukId.substring(0, 8)}</span>
+               </div>
+               <p className="text-[10px] text-slate-400 leading-relaxed">
+                 Anda sedang mengubah transaksi ini. Klik "Simpan Perubahan" untuk memperbarui database.
+               </p>
+               <button
+                 type="button"
+                 onClick={handleCancelEditTransaction}
+                 className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-350 font-bold rounded-lg text-[10px] transition-colors"
+               >
+                 Batal Edit
+               </button>
+             </div>
+           )}
+
+           <button
+             onClick={handleCheckout}
+             disabled={loading || (cart.length === 0 && !hasCarwash) || isUangKurang}
+             className="w-full py-3 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-extrabold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 animate-pulse-glow"
+           >
+             {loading ? 'Memproses Transaksi...' : editingStrukId ? 'Simpan Perubahan' : `Simpan & Cetak (${paymentStatus})`}
+           </button>
+         </div>
+       </div>
 
       {/* Floating Cart Bar for Mobile */}
       {(cart.length > 0 || hasCarwash) && !showMobileCart ? (
@@ -2718,11 +2853,100 @@ const CafePOS = () => {
                     <span>{formatRupiah(carwashTotal)}</span>
                   </div>
                 )}
+
+                {/* Dropdown Diskon Carwash Mobile */}
+                {hasCarwash && (
+                  <div className="space-y-1 py-1">
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Diskon Carwash</label>
+                    <select
+                      value={selectedDiskonCarwash ? selectedDiskonCarwash.id_diskon : ''}
+                      onChange={(e) => {
+                        const id = e.target.value
+                        if (!id) setSelectedDiskonCarwash(null)
+                        else {
+                          const found = discounts.find(d => d.id_diskon === id)
+                          setSelectedDiskonCarwash(found || null)
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg py-1.5 px-3 text-white text-xs font-semibold focus:outline-none focus:border-brand-blue"
+                    >
+                      <option value="">Tanpa Diskon</option>
+                      {discounts.filter(d => d.kategori === 'Carwash' || d.kategori === 'Semua').map(d => (
+                        <option key={d.id_diskon} value={d.id_diskon}>
+                          {d.nama} ({d.tipe === 'Persen' ? `${d.nominal}%` : formatRupiah(d.nominal)})
+                        </option>
+                      ))}
+                    </select>
+                    {diskonCarwashNominal > 0 && (
+                      <span className="text-[10px] text-brand-emerald font-semibold block">Potongan: -{formatRupiah(diskonCarwashNominal)}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Dropdown Diskon Cafe Mobile */}
+                {cart.length > 0 && (
+                  <div className="space-y-1 py-1">
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Diskon Cafe</label>
+                    <select
+                      value={selectedDiskonCafe ? selectedDiskonCafe.id_diskon : ''}
+                      onChange={(e) => {
+                        const id = e.target.value
+                        if (!id) setSelectedDiskonCafe(null)
+                        else {
+                          const found = discounts.find(d => d.id_diskon === id)
+                          setSelectedDiskonCafe(found || null)
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg py-1.5 px-3 text-white text-xs font-semibold focus:outline-none focus:border-brand-blue"
+                    >
+                      <option value="">Tanpa Diskon</option>
+                      {discounts.filter(d => d.kategori === 'Cafe' || d.kategori === 'Semua').map(d => (
+                        <option key={d.id_diskon} value={d.id_diskon}>
+                          {d.nama} ({d.tipe === 'Persen' ? `${d.nominal}%` : formatRupiah(d.nominal)})
+                        </option>
+                      ))}
+                    </select>
+                    {diskonCafeNominal > 0 && (
+                      <span className="text-[10px] text-brand-emerald font-semibold block">Potongan: -{formatRupiah(diskonCafeNominal)}</span>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-slate-800/50">
                   <span>Total Bayar</span>
                   <span className="text-brand-emerald">{formatRupiah(grandTotal)}</span>
                 </div>
               </div>
+
+              {/* Input Uang Diterima & Kembalian Mobile */}
+              {paymentStatus === 'Selesai' && (selectedPayment === 'CASH' || selectedPayment === 'SPLIT') && (
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-850 space-y-3 my-1">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Kalkulator Kembalian</span>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-semibold block">Uang Diterima (Cash):</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1.5 text-xs text-slate-500 font-bold font-mono">Rp</span>
+                      <input
+                        type="number"
+                        value={uangDiterima}
+                        onChange={(e) => setUangDiterima(e.target.value)}
+                        placeholder="Contoh: 100000"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-blue"
+                      />
+                    </div>
+                  </div>
+                  {uangDiterima && (
+                    <div className="flex justify-between items-center text-xs border-t border-slate-800/50 pt-2">
+                      <span className="text-slate-400">Kembalian:</span>
+                      {isUangKurang ? (
+                        <span className="font-mono font-bold text-rose-450 uppercase text-[10px]">Kurang {formatRupiah(Math.abs(kembalian))}</span>
+                      ) : (
+                        <span className="font-mono font-black text-brand-emerald text-sm">{formatRupiah(kembalian)}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {editingStrukId && (
                 <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 my-1 text-xs">
@@ -2751,7 +2975,7 @@ const CafePOS = () => {
                   handleCheckout();
                   setShowMobileCart(false);
                 }}
-                disabled={loading || (cart.length === 0 && !hasCarwash)}
+                disabled={loading || (cart.length === 0 && !hasCarwash) || isUangKurang}
                 className="w-full py-3 bg-brand-emerald hover:bg-emerald-450 active:bg-emerald-600 text-slate-950 font-extrabold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 animate-pulse-glow"
               >
                 {loading ? 'Memproses Transaksi...' : editingStrukId ? 'Simpan Perubahan' : `Simpan & Cetak (${paymentStatus})`}

@@ -31,3 +31,4 @@ backup_before_migration/
 scratch_*.js
 *.bak
 
+.env*

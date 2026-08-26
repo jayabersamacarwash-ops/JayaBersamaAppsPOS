@@ -51,6 +51,8 @@ const TABLES_METADATA = {
       { name: 'metode_bayar', label: 'Metode Pembayaran', type: 'text', required: true },
       { name: 'status_bayar', label: 'Status Bayar', type: 'select', options: ['Pending', 'Selesai', 'Batal'], required: true },
       { name: 'kasir', label: 'Kasir', type: 'text', required: true },
+      { name: 'diskon_carwash', label: 'Diskon Carwash', type: 'number' },
+      { name: 'diskon_cafe', label: 'Diskon Cafe', type: 'number' },
       { name: 'total_tagihan', label: 'Total Tagihan', type: 'number', required: true }
     ]
   },

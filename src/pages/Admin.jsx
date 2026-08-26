@@ -16,7 +16,8 @@ import {
   Eye,
   DollarSign,
   Users,
-  Calendar
+  Calendar,
+  Percent
 } from 'lucide-react'
 import { formatRupiah } from '../utils/helpers'
 import InteractiveCalendar from '../components/InteractiveCalendar'
@@ -73,6 +74,15 @@ const Admin = () => {
   const [balances, setBalances] = useState({ cash: 0, rekY: 0, rekN: 0 })
   const [targetBalances, setTargetBalances] = useState({ cash: '', rekY: '', rekN: '' })
 
+  // State Form Diskon
+  const [discounts, setDiscounts] = useState([])
+  const [discountForm, setDiscountForm] = useState({
+    nama: '',
+    nominal: 0,
+    tipe: 'Rupiah',
+    kategori: 'Carwash'
+  })
+
   // State Form Kasir
   const [newCashier, setNewCashier] = useState('')
   
@@ -120,6 +130,8 @@ const Admin = () => {
       const { data: sb } = await supabase.from('stok_barang').select('*').order('nama_produk', { ascending: true })
       // Fetch Resep
       const { data: rs } = await supabase.from('resep').select('*')
+      // Fetch Diskon
+      const { data: dk } = await supabase.from('diskon').select('*').order('created_at', { ascending: false })
 
       const realCashiers = kc || []
       const realPayments = pm || []
@@ -155,6 +167,7 @@ const Admin = () => {
       setMenuItems(realMenus)
       setStokBahan(realStok)
       setResepList(realResep)
+      setDiscounts(dk || [])
 
     } catch (err) {
       console.error('Error loading admin data:', err)
@@ -370,6 +383,54 @@ const Admin = () => {
 
     setMenuRecipe(recipeRows)
     setShowMenuModal(true)
+  }
+
+  const handleSaveDiscount = async (e) => {
+    e.preventDefault()
+    if (!discountForm.nama) return setError('Nama diskon wajib diisi.')
+    if (parseFloat(discountForm.nominal) <= 0) return setError('Nominal diskon harus lebih dari 0.')
+    setLoading(true)
+    setError('')
+    setSuccess('')
+    try {
+      const { error: err } = await supabase
+        .from('diskon')
+        .insert({
+          nama: discountForm.nama.trim(),
+          nominal: parseFloat(discountForm.nominal),
+          tipe: discountForm.tipe,
+          kategori: discountForm.kategori
+        })
+      if (err) throw err
+      setSuccess('Berhasil menambahkan diskon baru!')
+      setDiscountForm({ nama: '', nominal: 0, tipe: 'Rupiah', kategori: 'Carwash' })
+      await loadAdminData()
+    } catch (err) {
+      console.error(err)
+      setError('Gagal menyimpan diskon: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteDiscount = async (id_diskon, name) => {
+    const confirmed = await showConfirm(`Apakah Anda yakin ingin menghapus diskon "${name}"?`, 'Hapus Diskon')
+    if (!confirmed) return
+    setLoading(true)
+    try {
+      const { error: err } = await supabase
+        .from('diskon')
+        .delete()
+        .eq('id_diskon', id_diskon)
+      if (err) throw err
+      await showAlert(`Diskon "${name}" berhasil dihapus.`, 'Sukses')
+      await loadAdminData()
+    } catch (err) {
+      console.error(err)
+      await showAlert('Gagal menghapus diskon: ' + err.message, 'Error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleSaveMenu = async (e) => {
@@ -635,6 +696,15 @@ const Admin = () => {
         >
           <Settings size={14} />
           Kalibrasi Saldo
+        </button>
+        <button
+          onClick={() => setActiveTab('discounts')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+            activeTab === 'discounts' ? 'bg-brand-blue text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Percent size={14} />
+          Kelola Diskon
         </button>
       </div>
 
@@ -960,6 +1030,134 @@ const Admin = () => {
               {loading ? 'Menyimpan Kalibrasi...' : 'Simpan & Sesuaikan Saldo'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* CONTENT TAB 6: Kelola Diskon */}
+      {activeTab === 'discounts' && (
+        <div className="space-y-6">
+          <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* Form Tambah Diskon Baru */}
+            <div className="md:col-span-1 space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Plus className="text-brand-blue" size={18} />
+                  <span>Tambah Diskon</span>
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Daftarkan promo atau diskon baru untuk digunakan di kasir.</p>
+              </div>
+
+              <form onSubmit={handleSaveDiscount} className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Nama Diskon / Promo</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: PROMO MEMBER"
+                    value={discountForm.nama}
+                    onChange={(e) => setDiscountForm(prev => ({ ...prev, nama: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-xs uppercase focus:outline-none focus:border-brand-blue"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Tipe Potongan</label>
+                  <select
+                    value={discountForm.tipe}
+                    onChange={(e) => setDiscountForm(prev => ({ ...prev, tipe: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-xs focus:outline-none focus:border-brand-blue"
+                  >
+                    <option value="Rupiah">Nominal Rupiah (Rp)</option>
+                    <option value="Persen">Persentase (%)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                    {discountForm.tipe === 'Persen' ? 'Besar Persen (%)' : 'Besar Potongan (Rp)'}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max={discountForm.tipe === 'Persen' ? '100' : undefined}
+                    placeholder={discountForm.tipe === 'Persen' ? 'Contoh: 10' : 'Contoh: 5000'}
+                    value={discountForm.nominal || ''}
+                    onChange={(e) => setDiscountForm(prev => ({ ...prev, nominal: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-xs focus:outline-none focus:border-brand-blue"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Kategori Berlaku</label>
+                  <select
+                    value={discountForm.kategori}
+                    onChange={(e) => setDiscountForm(prev => ({ ...prev, kategori: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-xs focus:outline-none focus:border-brand-blue"
+                  >
+                    <option value="Carwash">Hanya Carwash</option>
+                    <option value="Cafe">Hanya Cafe</option>
+                    <option value="Semua">Semua (Carwash & Cafe)</option>
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2 bg-brand-blue hover:bg-cyan-500 active:bg-cyan-600 disabled:opacity-50 text-slate-950 font-bold rounded-lg transition-all text-xs"
+                >
+                  {loading ? 'Menyimpan...' : 'Simpan Promo'}
+                </button>
+              </form>
+            </div>
+
+            {/* List Diskon Terdaftar */}
+            <div className="md:col-span-2 space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Percent className="text-brand-blue" size={18} />
+                  <span>Daftar Diskon Terdaftar</span>
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Daftar promo aktif yang dapat dipilih oleh kasir.</p>
+              </div>
+
+              <div className="bg-slate-950/40 border border-slate-850 rounded-xl overflow-hidden divide-y divide-slate-850">
+                {discounts.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500">Belum ada promo/diskon yang didaftarkan.</div>
+                ) : (
+                  discounts.map((d) => (
+                    <div key={d.id_diskon} className="p-3.5 flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-extrabold text-white uppercase tracking-wide flex items-center gap-2">
+                          <span>{d.nama}</span>
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-slate-850 text-slate-400">
+                            {d.kategori === 'Semua' ? 'Cafe & Carwash' : d.kategori}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          Tipe: {d.tipe === 'Persen' ? 'Persentase' : 'Rupiah'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="font-mono font-black text-brand-emerald text-sm">
+                          {d.tipe === 'Persen' ? `${d.nominal}%` : formatRupiah(d.nominal)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDiscount(d.id_diskon, d.nama)}
+                          className="text-rose-400 hover:text-rose-500 p-1 bg-slate-900 border border-slate-850 rounded-lg"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
 
