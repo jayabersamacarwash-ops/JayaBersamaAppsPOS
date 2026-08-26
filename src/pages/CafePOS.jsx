@@ -108,6 +108,7 @@ const CafePOS = () => {
   })
   const [todayTransactions, setTodayTransactions] = useState([])
   const [settlePaymentMethod, setSettlePaymentMethod] = useState('')
+  const [settleCashReceived, setSettleCashReceived] = useState('')
 
   // Split Payment states
   const [splitCashAmount, setSplitCashAmount] = useState('')
@@ -940,6 +941,13 @@ const CafePOS = () => {
     e.preventDefault()
     if (!settlingBill) return
     if (!settlePaymentMethod) return setError('Pilih metode pembayaran terlebih dahulu.')
+
+    const targetCashToPay = settlePaymentMethod === 'SPLIT' ? (parseFloat(splitCashAmount) || 0) : (settlePaymentMethod === 'CASH' ? settlingBill.total_harga : 0)
+    if (settleCashReceived && targetCashToPay > 0 && parseFloat(settleCashReceived) < targetCashToPay) {
+      setError(`Uang yang diterima (${formatRupiah(parseFloat(settleCashReceived))}) kurang dari jumlah yang harus dibayar (${formatRupiah(targetCashToPay)}).`)
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
@@ -984,14 +992,21 @@ const CafePOS = () => {
         .update({ status: 'Selesai' })
         .eq('id_struk', settlingBill.id)
 
+      const finalKembalian = (settleCashReceived && targetCashToPay > 0) ? Math.max(0, parseFloat(settleCashReceived) - targetCashToPay) : 0
+
       setSuccess(true)
       setSettlingBill(null)
       setSettlePaymentMethod('')
       setSplitCashAmount('')
       setSplitQrisAmount('')
+      setSettleCashReceived('')
       await fetchPendingBills()
       await fetchCashierCash()
       await fetchTodayTransactions()
+
+      if (finalKembalian > 0) {
+        await showAlert(`Pelunasan Tagihan Berhasil!\n\nUang Diterima: ${formatRupiah(parseFloat(settleCashReceived))}\nKembalian: ${formatRupiah(finalKembalian)}`, 'Sukses Pelunasan')
+      }
       setTimeout(() => setSuccess(false), 3000)
     } catch (err) {
       console.error('Error settling bill:', err)
@@ -2046,6 +2061,7 @@ const CafePOS = () => {
                             onClick={() => {
                               setSettlingBill(bill)
                               setSettlePaymentMethod(paymentMethods[0]?.nama || 'CASH')
+                              setSettleCashReceived('')
                             }}
                             className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
                           >
@@ -2172,6 +2188,7 @@ const CafePOS = () => {
                                 onClick={() => {
                                   setSettlingBill(tx)
                                   setSettlePaymentMethod(paymentMethods[0]?.nama || 'CASH')
+                                  setSettleCashReceived('')
                                 }}
                                 className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition-colors flex items-center gap-1"
                               >
@@ -3067,6 +3084,44 @@ const CafePOS = () => {
                 </div>
               )}
 
+              {/* Kalkulator Kembalian untuk Pelunasan (CASH / SPLIT) */}
+              {(settlePaymentMethod === 'CASH' || settlePaymentMethod === 'SPLIT') && (() => {
+                const targetCash = settlePaymentMethod === 'SPLIT' ? (parseFloat(splitCashAmount) || 0) : (settlingBill?.total_harga || 0)
+                const sKembalian = settleCashReceived ? parseFloat(settleCashReceived) - targetCash : 0
+                const isSKurang = settleCashReceived && sKembalian < 0
+
+                return (
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3 my-1">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Kalkulator Kembalian Pelunasan</span>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-semibold block">
+                        Uang Diterima dari Pelanggan (Cash):
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2 text-xs text-slate-500 font-bold font-mono">Rp</span>
+                        <input
+                          type="number"
+                          value={settleCashReceived}
+                          onChange={(e) => setSettleCashReceived(e.target.value)}
+                          placeholder={targetCash ? `Contoh: ${targetCash}` : 'Contoh: 100000'}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 pl-8 pr-3 text-white text-xs font-bold font-mono focus:outline-none focus:border-brand-emerald"
+                        />
+                      </div>
+                    </div>
+                    {settleCashReceived && (
+                      <div className="flex justify-between items-center text-xs border-t border-slate-800/60 pt-2">
+                        <span className="text-slate-400">Kembalian Pelanggan:</span>
+                        {isSKurang ? (
+                          <span className="font-mono font-bold text-rose-450 uppercase text-[10px]">Kurang {formatRupiah(Math.abs(sKembalian))}</span>
+                        ) : (
+                          <span className="font-mono font-black text-brand-emerald text-sm">{formatRupiah(sKembalian)}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 mt-4">
                 <button
                   type="button"
@@ -3077,7 +3132,7 @@ const CafePOS = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || ((settlePaymentMethod === 'CASH' || settlePaymentMethod === 'SPLIT') && settleCashReceived && (parseFloat(settleCashReceived) < (settlePaymentMethod === 'SPLIT' ? (parseFloat(splitCashAmount) || 0) : (settlingBill?.total_harga || 0))))}
                   className="px-4 py-2 bg-brand-emerald hover:bg-emerald-500 active:bg-emerald-600 text-slate-950 font-bold rounded-xl text-sm disabled:opacity-50"
                 >
                   {loading ? 'Memproses...' : 'Konfirmasi Lunas'}
