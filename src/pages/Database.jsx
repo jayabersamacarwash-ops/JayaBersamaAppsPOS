@@ -36,7 +36,8 @@ const TABLES_METADATA = {
       { name: 'anggota_1', label: 'Pencuci 1', type: 'text' },
       { name: 'anggota_2', label: 'Pencuci 2', type: 'text' },
       { name: 'status', label: 'Status', type: 'select', options: ['Antrean', 'Sedang Dicuci', 'Selesai', 'Batal'], required: true },
-      { name: 'tanggal', label: 'Tanggal (YYYY-MM-DD)', type: 'date', required: true }
+      { name: 'tanggal', label: 'Tanggal (YYYY-MM-DD)', type: 'date', required: true },
+      { name: 'jam', label: 'Jam (HH:MM:SS)', type: 'text' }
     ]
   },
   struk: {

@@ -183,6 +183,7 @@ const Karyawan = () => {
           harga_custom,
           gaji_pencuci,
           status,
+          jam,
           created_at,
           tanggal
         `)
@@ -297,7 +298,9 @@ const Karyawan = () => {
         summary[w1].totalWage += share
         summary[w1].details.push({
           id: item.id_transaksi,
-          tanggal: item.created_at,
+          tanggal: item.tanggal,
+          jam: item.jam,
+          created_at: item.created_at,
           platNomor: item.plat,
           paket: item.paket,
           variant: item.variant,
@@ -317,7 +320,9 @@ const Karyawan = () => {
         summary[w2].totalWage += share
         summary[w2].details.push({
           id: item.id_transaksi,
-          tanggal: item.created_at,
+          tanggal: item.tanggal,
+          jam: item.jam,
+          created_at: item.created_at,
           platNomor: item.plat,
           paket: item.paket,
           variant: item.variant,
@@ -800,15 +805,21 @@ const Karyawan = () => {
                             </tr>
                           ) : (
                             selectedWorkerDetails?.details.map((job) => {
-                              const dateObj = new Date(job.tanggal)
-                              const timeStr = dateObj.toLocaleDateString('id-ID', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric'
-                              }) + ' ' + dateObj.toLocaleTimeString('id-ID', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })
+                              const dateParts = job.tanggal ? String(job.tanggal).split('T')[0].split('-') : []
+                              const formattedDate = dateParts.length === 3
+                                ? `${parseInt(dateParts[2], 10)} ${['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][parseInt(dateParts[1], 10) - 1]} ${dateParts[0]}`
+                                : (job.tanggal || '');
+
+                              let formattedJam = job.jam ? job.jam.substring(0, 5) : ''
+                              if (!formattedJam && job.created_at) {
+                                const d = new Date(job.created_at)
+                                if (!isNaN(d.getTime())) {
+                                  formattedJam = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                }
+                              }
+                              if (!formattedJam) formattedJam = '--:--'
+
+                              const timeStr = `${formattedDate} ${formattedJam}`
 
                               return (
                                 <tr 
@@ -1266,7 +1277,21 @@ const Karyawan = () => {
                 <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-850">
                   <span className="text-[9px] text-slate-500 font-bold uppercase block">Waktu Input</span>
                   <span className="font-mono text-[9.5px] font-semibold text-slate-300">
-                    {new Date(selectedJobForCrosscheck.tanggal).toLocaleString('id-ID')}
+                    {(() => {
+                      const dParts = selectedJobForCrosscheck.tanggal ? String(selectedJobForCrosscheck.tanggal).split('T')[0].split('-') : []
+                      const dStr = dParts.length === 3
+                        ? `${parseInt(dParts[2], 10)} ${['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'][parseInt(dParts[1], 10) - 1]} ${dParts[0]}`
+                        : (selectedJobForCrosscheck.tanggal || '');
+                      
+                      let jStr = selectedJobForCrosscheck.jam ? selectedJobForCrosscheck.jam.substring(0, 5) : ''
+                      if (!jStr && selectedJobForCrosscheck.created_at) {
+                        const d = new Date(selectedJobForCrosscheck.created_at)
+                        if (!isNaN(d.getTime())) {
+                          jStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                        }
+                      }
+                      return `${dStr}${jStr ? ` • ${jStr} WIB` : ''}`
+                    })()}
                   </span>
                 </div>
               </div>
