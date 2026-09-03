@@ -206,7 +206,6 @@ const Finance = () => {
       const { data: cafeData, error: cafeErr } = await supabase
         .from('cafe')
         .select('*, struk(tanggal, jam, kasir, metode_bayar, status_bayar)')
-        .order('created_at', { ascending: false })
       if (cafeErr) throw cafeErr
       setCafeList(cafeData || [])
 
@@ -438,15 +437,16 @@ const Finance = () => {
   // ==========================================
   const filteredCafe = useMemo(() => {
     return cafeList.filter(item => {
-      const itemDate = item.struk?.tanggal || (item.created_at ? item.created_at.substring(0, 10) : '')
+      const itemDate = item.struk?.tanggal || ''
       if (!isDateInRange(itemDate)) return false
 
-      if (filterCafeCategory !== 'all' && item.kategori !== filterCafeCategory) return false
+      const itemKat = item.kategori || 'Menu'
+      if (filterCafeCategory !== 'all' && itemKat !== filterCafeCategory) return false
 
       if (searchQuery) {
         const q = searchQuery.toLowerCase()
-        const matchItem = String(item.nama_item || '').toLowerCase().includes(q)
-        const matchKat = String(item.kategori || '').toLowerCase().includes(q)
+        const matchItem = String(item.nama_menu || item.nama_item || '').toLowerCase().includes(q)
+        const matchKat = String(itemKat).toLowerCase().includes(q)
         const matchStruk = String(item.id_struk || '').toLowerCase().includes(q)
         const matchKasir = String(item.struk?.kasir || '').toLowerCase().includes(q)
         if (!matchItem && !matchKat && !matchStruk && !matchKasir) return false
@@ -462,12 +462,12 @@ const Finance = () => {
     const countMap = {}
 
     filteredCafe.forEach(item => {
-      const qty = parseFloat(item.jumlah || 1)
-      const tot = parseFloat(item.total_harga || 0)
+      const qty = parseFloat(item.qty || item.jumlah || 1)
+      const tot = parseFloat(item.subtotal || item.total_harga || (qty * (parseFloat(item.harga_satuan) || 0)))
       totalItems += qty
       totalRev += tot
 
-      const name = item.nama_item || 'Item Lain'
+      const name = item.nama_menu || item.nama_item || 'Item Lain'
       countMap[name] = (countMap[name] || 0) + qty
     })
 
@@ -601,12 +601,11 @@ const Finance = () => {
         { label: 'Tanggal', accessor: (r) => r.struk?.tanggal || '' },
         { label: 'Jam', accessor: (r) => r.struk?.jam || '' },
         { label: 'Kasir', accessor: (r) => r.struk?.kasir || '' },
-        { label: 'Nama Menu', key: 'nama_item' },
-        { label: 'Kategori Menu', key: 'kategori' },
-        { label: 'Qty', key: 'jumlah' },
+        { label: 'Nama Menu', accessor: (r) => r.nama_menu || r.nama_item || '' },
+        { label: 'Kategori', accessor: (r) => r.kategori || 'Menu' },
+        { label: 'Qty', accessor: (r) => r.qty || r.jumlah || 1 },
         { label: 'Harga Satuan (Rp)', key: 'harga_satuan' },
-        { label: 'Diskon (Rp)', key: 'diskon' },
-        { label: 'Total Harga (Rp)', key: 'total_harga' }
+        { label: 'Subtotal (Rp)', accessor: (r) => r.subtotal || r.total_harga || ((r.qty || r.jumlah || 1) * (r.harga_satuan || 0)) }
       ]
       const csvStr = generateCSVString(headers, filteredCafe)
       downloadCSV(csvStr, `Laporan_Cafe_JayaBersama_${dateTag}`)
@@ -1732,18 +1731,20 @@ const Finance = () => {
                     paginatedList.map(item => (
                       <tr key={item.id_detail} className="hover:bg-slate-850/30 transition-colors">
                         <td className="p-3 font-mono text-slate-400">
-                          {item.struk?.tanggal || (item.created_at ? item.created_at.substring(0, 10) : '')}
+                          {item.struk?.tanggal || '-'}
                           <span className="text-[10px] text-slate-500 block">Kasir: {item.struk?.kasir || 'Admin'}</span>
                         </td>
-                        <td className="p-3 font-extrabold text-white">{item.nama_item}</td>
+                        <td className="p-3 font-extrabold text-white">{item.nama_menu || item.nama_item || 'Menu'}</td>
                         <td className="p-3">
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
                             {item.kategori || 'Menu'}
                           </span>
                         </td>
-                        <td className="p-3 text-center font-mono font-bold text-brand-blue">{item.jumlah || 1}x</td>
+                        <td className="p-3 text-center font-mono font-bold text-brand-blue">{item.qty || item.jumlah || 1}x</td>
                         <td className="p-3 text-right font-mono text-slate-300">{formatRupiah(item.harga_satuan)}</td>
-                        <td className="p-3 text-right font-mono font-bold text-brand-emerald">{formatRupiah(item.total_harga)}</td>
+                        <td className="p-3 text-right font-mono font-bold text-brand-emerald">
+                          {formatRupiah(item.subtotal || item.total_harga || ((item.qty || item.jumlah || 1) * (item.harga_satuan || 0)))}
+                        </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
