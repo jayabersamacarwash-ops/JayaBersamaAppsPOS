@@ -900,7 +900,7 @@ const CafePOS = () => {
       // 1. Ambil semua struk lunas hari ini
       const { data: strukHariIni, error: errStruk } = await supabase
         .from('struk')
-        .select('total_tagihan, metode_bayar')
+        .select('total_tagihan, metode_bayar, nominal_cash, nominal_qris')
         .eq('status_bayar', 'Selesai')
         .eq('tanggal', todayDate)
 
@@ -1518,7 +1518,6 @@ const CafePOS = () => {
       }
 
       if (editingStrukId) {
-        window.alert('Perubahan transaksi berhasil disimpan!')
         setEditingStrukId(null)
       }
       setSuccess(true)

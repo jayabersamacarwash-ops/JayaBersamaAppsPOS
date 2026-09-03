@@ -15,23 +15,6 @@ import {
 import { formatRupiah } from '../utils/helpers'
 import InteractiveCalendar from '../components/InteractiveCalendar'
 
-const fetchAllRows = async (table, select = '*') => {
-  let allData = []
-  let from = 0
-  const step = 1000
-  while (true) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(select)
-      .range(from, from + step - 1)
-    if (error || !data || data.length === 0) break
-    allData = allData.concat(data)
-    if (data.length < step) break
-    from += step
-  }
-  return allData
-}
-
 const Karyawan = () => {
   const { registerKasir } = useAuth()
   const [activeTab, setActiveTab] = useState('wages') // 'wages', 'crew', 'office', 'staff'

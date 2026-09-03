@@ -93,6 +93,22 @@ describe('Base Helpers', () => {
       }
       expect(set.size).toBe(100)
     })
+
+    it('should fallback to valid RFC 4122 v4 UUID format when crypto.randomUUID is not available', () => {
+      const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto
+      const originalRandomUUID = cryptoObj?.randomUUID
+      if (cryptoObj && cryptoObj.randomUUID) {
+        cryptoObj.randomUUID = undefined
+      }
+
+      const uuid = generateUUID()
+      const rfc4122Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      expect(rfc4122Regex.test(uuid)).toBe(true)
+
+      if (cryptoObj && originalRandomUUID) {
+        cryptoObj.randomUUID = originalRandomUUID
+      }
+    })
   })
 
   describe('calculateTutupKasirRecap', () => {
@@ -146,6 +162,27 @@ describe('Base Helpers', () => {
       expect(expenseRecord.kategori).toBe('Operasional')
       expect(expenseRecord.jenis).toBe('pengeluaran Cafe')
       expect(expenseRecord.keterangan_transaksi).toBe('Rekap Pengeluaran Kasir - Kasir: Alexa')
+    })
+
+    it('should accurately calculate SPLIT payment dividing nominal_cash and nominal_qris', () => {
+      const receipts = [
+        { total_tagihan: 50000, metode_bayar: 'SPLIT', nominal_cash: 20000, nominal_qris: 30000, status_bayar: 'Selesai' },
+        { total_tagihan: 30000, metode_bayar: 'CASH', nominal_cash: 30000, nominal_qris: 0, status_bayar: 'Selesai' }
+      ]
+
+      const recap = calculateTutupKasirRecap({
+        receipts,
+        expenses: [],
+        cashierName: 'Syafa',
+        todayDate: '2026-08-06',
+        timestamp: '2026-08-06T15:22:00.000Z'
+      })
+
+      const cashRecord = recap.find(r => r.kategori === 'Omzet Harian (CASH)')
+      const qrisRecord = recap.find(r => r.kategori === 'Omzet Harian (QRIS)')
+
+      expect(cashRecord.pemasukan).toBe(50000) // 20000 (split) + 30000 (cash)
+      expect(qrisRecord.pemasukan).toBe(30000) // 30000 (split)
     })
 
     it('should omit records that have zero total', () => {

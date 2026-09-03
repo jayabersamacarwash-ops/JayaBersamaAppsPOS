@@ -1,8 +1,12 @@
 export const generateUUID = () => {
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+  if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.randomUUID === 'function') {
     return window.crypto.randomUUID()
   }
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 export const formatRupiah = (val) => {
@@ -48,8 +52,14 @@ export const calculateTutupKasirRecap = ({ receipts, expenses, cashierName, toda
   
   if (receipts) {
     receipts.forEach(s => {
-      if (s.metode_bayar === 'CASH') totalCash += parseFloat(s.total_tagihan || 0)
-      else if (s.metode_bayar === 'QRIS') totalQRIS += parseFloat(s.total_tagihan || 0)
+      if (s.metode_bayar === 'CASH') {
+        totalCash += parseFloat(s.total_tagihan || 0)
+      } else if (s.metode_bayar === 'QRIS') {
+        totalQRIS += parseFloat(s.total_tagihan || 0)
+      } else if (s.metode_bayar === 'SPLIT') {
+        totalCash += parseFloat(s.nominal_cash || 0)
+        totalQRIS += parseFloat(s.nominal_qris || 0)
+      }
     })
   }
 

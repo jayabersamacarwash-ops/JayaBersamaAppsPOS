@@ -1,16 +1,24 @@
-import React, { useState } from 'react'
+import React, { useState, lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import Sidebar from './components/Sidebar'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import CafePOS from './pages/CafePOS'
-import CarwashQueue from './pages/CarwashQueue'
-import Finance from './pages/Finance'
-import Admin from './pages/Admin'
-import Karyawan from './pages/Karyawan'
-import Database from './pages/Database'
+
+const Login = lazy(() => import('./pages/Login'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const CafePOS = lazy(() => import('./pages/CafePOS'))
+const CarwashQueue = lazy(() => import('./pages/CarwashQueue'))
+const Finance = lazy(() => import('./pages/Finance'))
+const Admin = lazy(() => import('./pages/Admin'))
+const Karyawan = lazy(() => import('./pages/Karyawan'))
+const Database = lazy(() => import('./pages/Database'))
+
+const PageLoader = () => (
+  <div className="min-h-[70vh] flex flex-col items-center justify-center text-slate-400">
+    <div className="w-10 h-10 border-3 border-brand-emerald border-t-transparent rounded-full animate-spin"></div>
+    <p className="mt-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">Memuat Halaman...</p>
+  </div>
+)
 
 // Komponen Proteksi Rute berdasarkan Login & Peran (Role)
 const ProtectedRoute = ({ children, ownerOnly = false }) => {
@@ -67,89 +75,91 @@ const AppContent = () => {
         )}
 
         <div className="relative z-10">
-          <Routes>
-            {/* Rute Login */}
-            <Route 
-              path="/login" 
-              element={!user ? <Login /> : <Navigate to={profile?.role === 'Owner' ? '/' : '/pos'} replace />} 
-            />
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              {/* Rute Login */}
+              <Route 
+                path="/login" 
+                element={!user ? <Login /> : <Navigate to={profile?.role === 'Owner' ? '/' : '/pos'} replace />} 
+              />
 
-            {/* Rute Dashboard (Owner Only) */}
-            <Route 
-              path="/" 
-              element={
-                <ProtectedRoute ownerOnly={true}>
-                  <Dashboard />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute Dashboard (Owner Only) */}
+              <Route 
+                path="/" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <Dashboard />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute POS (Owner & Kasir) */}
-            <Route 
-              path="/pos" 
-              element={
-                <ProtectedRoute>
-                  <CafePOS />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute POS (Owner & Kasir) */}
+              <Route 
+                path="/pos" 
+                element={
+                  <ProtectedRoute>
+                    <CafePOS />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute Antrean Carwash (Owner & Kasir) */}
-            <Route 
-              path="/queue" 
-              element={
-                <ProtectedRoute>
-                  <CarwashQueue />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute Antrean Carwash (Owner & Kasir) */}
+              <Route 
+                path="/queue" 
+                element={
+                  <ProtectedRoute>
+                    <CarwashQueue />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute Keuangan (Owner Only) */}
-            <Route 
-              path="/finance" 
-              element={
-                <ProtectedRoute ownerOnly={true}>
-                  <Finance />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute Keuangan (Owner Only) */}
+              <Route 
+                path="/finance" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <Finance />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute Kelola Karyawan (Owner Only) */}
-            <Route 
-              path="/karyawan" 
-              element={
-                <ProtectedRoute ownerOnly={true}>
-                  <Karyawan />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute Kelola Karyawan (Owner Only) */}
+              <Route 
+                path="/karyawan" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <Karyawan />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute Kelola Admin (Owner Only) */}
-            <Route 
-              path="/admin" 
-              element={
-                <ProtectedRoute ownerOnly={true}>
-                  <Admin />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute Kelola Admin (Owner Only) */}
+              <Route 
+                path="/admin" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <Admin />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute Database Manager (Owner Only) */}
-            <Route 
-              path="/database" 
-              element={
-                <ProtectedRoute ownerOnly={true}>
-                  <Database />
-                </ProtectedRoute>
-              } 
-            />
+              {/* Rute Database Manager (Owner Only) */}
+              <Route 
+                path="/database" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <Database />
+                  </ProtectedRoute>
+                } 
+              />
 
-            {/* Rute Catch-All */}
-            <Route 
-              path="*" 
-              element={<Navigate to={user ? (profile?.role === 'Owner' ? '/' : '/pos') : '/login'} replace />} 
-            />
-          </Routes>
+              {/* Rute Catch-All */}
+              <Route 
+                path="*" 
+                element={<Navigate to={user ? (profile?.role === 'Owner' ? '/' : '/pos') : '/login'} replace />} 
+              />
+            </Routes>
+          </Suspense>
         </div>
       </main>
     </div>
