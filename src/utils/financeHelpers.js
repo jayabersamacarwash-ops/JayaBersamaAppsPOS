@@ -160,3 +160,11 @@ export const downloadCSV = (csvContent, fileName) => {
   URL.revokeObjectURL(url)
 }
 
+export const isPindahSaldo = (item) => {
+  if (!item) return false
+  const j = String(item.jenis || '').toLowerCase().trim()
+  const k = String(item.kategori || '').toLowerCase().trim()
+  const ket = String(item.keterangan_transaksi || item.keterangan || item.nama_pengeluaran || '').toLowerCase().trim()
+  return j.includes('pindah') || k.includes('pindah') || ket.includes('pindah saldo') || ket.includes('transfer saldo') || ket.includes('mutasi saldo')
+}
+

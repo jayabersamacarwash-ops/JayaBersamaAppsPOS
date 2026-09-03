@@ -7,7 +7,8 @@ import {
   validatePosExpenseForm,
   formatPosExpensePayload,
   validateEditCashflowForm,
-  generateCSVString
+  generateCSVString,
+  isPindahSaldo
 } from '../financeHelpers'
 
 describe('Finance Helpers', () => {
@@ -225,6 +226,22 @@ describe('Finance Helpers', () => {
       expect(csv).toContain('"Tanggal","Keterangan","Nominal"')
       expect(csv).toContain('"2026-08-01","Beli ""Kopi"" & Teh","25000"')
       expect(csv).toContain('"2026-08-02","Cuci Mobil, Paket Lengkap","50000"')
+    })
+  })
+
+  describe('isPindahSaldo Helper', () => {
+    it('should accurately detect internal account transfers (pindah saldo)', () => {
+      expect(isPindahSaldo({ jenis: 'Pindah', kategori: 'Pindah', keterangan_transaksi: 'Pindah Saldo' })).toBe(true)
+      expect(isPindahSaldo({ jenis: 'pindah', kategori: 'Transfer', keterangan_transaksi: 'Setor Kas ke Bank' })).toBe(true)
+      expect(isPindahSaldo({ jenis: 'Pengeluaran', kategori: 'Operasional', keterangan_transaksi: 'Pindah Saldo Kas ke Rekening' })).toBe(true)
+      expect(isPindahSaldo({ jenis: 'Pemasukan', kategori: 'Pemasukan Lain-lain', keterangan_transaksi: 'Mutasi Saldo Rekening Y' })).toBe(true)
+    })
+
+    it('should return false for real income or expenses', () => {
+      expect(isPindahSaldo({ jenis: 'Pemasukan Cafe', kategori: 'Penjualan', keterangan_transaksi: 'Penjualan F&B' })).toBe(false)
+      expect(isPindahSaldo({ jenis: 'pengeluaran Carwash', kategori: 'Operasional', keterangan_transaksi: 'Beli Sabun Cuci' })).toBe(false)
+      expect(isPindahSaldo({ jenis: 'Casbon', kategori: 'Casbon', keterangan_transaksi: 'Casbon Staff' })).toBe(false)
+      expect(isPindahSaldo(null)).toBe(false)
     })
   })
 })

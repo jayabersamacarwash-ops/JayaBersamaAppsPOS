@@ -32,7 +32,8 @@ import {
   formatIncomePayload,
   validateEditCashflowForm,
   generateCSVString,
-  downloadCSV
+  downloadCSV,
+  isPindahSaldo
 } from '../utils/financeHelpers'
 
 const Finance = () => {
@@ -307,8 +308,10 @@ const Finance = () => {
     return cashflowList.filter(item => {
       if (!isDateInRange(item.tanggal)) return false
 
-      if (filterType === 'pemasukan' && !(parseFloat(item.pemasukan || 0) > 0)) return false
-      if (filterType === 'pengeluaran' && !(parseFloat(item.pengeluaran || 0) > 0)) return false
+      const isPindah = isPindahSaldo(item)
+      if (filterType === 'pemasukan' && (!(parseFloat(item.pemasukan || 0) > 0) || isPindah)) return false
+      if (filterType === 'pengeluaran' && (!(parseFloat(item.pengeluaran || 0) > 0) || isPindah)) return false
+      if (filterType === 'pindah' && !isPindah) return false
 
       if (filterPos !== 'all' && item.pos !== filterPos) return false
 
@@ -325,6 +328,23 @@ const Finance = () => {
     })
   }, [cashflowList, filterPeriodMode, selectedMonth, quickPreset, customStartDate, customEndDate, filterType, filterPos, searchQuery])
 
+  // All-time real summary (Mengecualikan Pindah Saldo antar rekening)
+  const allTimeSummary = useMemo(() => {
+    let inc = 0
+    let exp = 0
+    cashflowList.forEach(item => {
+      if (!isPindahSaldo(item)) {
+        inc += parseFloat(item.pemasukan || 0)
+        exp += parseFloat(item.pengeluaran || 0)
+      }
+    })
+    return {
+      totalIncome: inc,
+      totalExpense: exp,
+      totalBalance: inc - exp
+    }
+  }, [cashflowList])
+
   const cashflowKpis = useMemo(() => {
     let inc = 0
     let exp = 0
@@ -334,9 +354,15 @@ const Finance = () => {
     filteredCashflow.forEach(item => {
       const p = parseFloat(item.pemasukan || 0)
       const k = parseFloat(item.pengeluaran || 0)
-      inc += p
-      exp += k
+      const isPindah = isPindahSaldo(item)
 
+      // Pemasukan & Pengeluaran murni di luar Pindah Saldo / Mutasi Rekening
+      if (!isPindah) {
+        inc += p
+        exp += k
+      }
+
+      // Mutasi per dompet kas (Laci Cash & Rekening Bank) tetap mencatat perpindahan fisik
       if (item.pos === 'SALDO CASH') {
         cashNet += (p - k)
       } else {
@@ -352,7 +378,7 @@ const Finance = () => {
     const filteredCw = carwashList.filter(c => isDateInRange(c.tanggal) && c.status === 'Selesai')
     const totalCwRevenue = filteredCw.reduce((sum, c) => sum + (parseFloat(c.harga) || 0), 0)
 
-    const filteredCf = cashflowList.filter(c => isDateInRange(c.tanggal))
+    const filteredCf = cashflowList.filter(c => isDateInRange(c.tanggal) && !isPindahSaldo(c))
 
     // A. Owner: 1/3 CW - 'bang awal'
     const ownerLogs = filteredCf.filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('bang awal'))
@@ -502,6 +528,7 @@ const Finance = () => {
   const filteredExpenses = useMemo(() => {
     return expensesList.filter(item => {
       if (!isDateInRange(item.tanggal)) return false
+      if (isPindahSaldo(item)) return false
 
       if (filterExpenseCategory !== 'all' && item.kategori !== filterExpenseCategory) return false
 
@@ -1007,26 +1034,26 @@ const Finance = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
         <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
           <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">Total Kas Bersih (All-time)</p>
-          <h3 className={`text-2xl font-black mt-1.5 ${summary.totalBalance >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
-            {formatRupiah(summary.totalBalance)}
+          <h3 className={`text-2xl font-black mt-1.5 ${allTimeSummary.totalBalance >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
+            {formatRupiah(allTimeSummary.totalBalance)}
           </h3>
-          <span className="text-[10px] text-slate-500 mt-1 block">Net akumulasi seluruh pemasukan - pengeluaran</span>
+          <span className="text-[10px] text-slate-500 mt-1 block">Net akumulasi seluruh pemasukan - pengeluaran riil</span>
         </div>
         <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
           <div className="flex justify-between items-center">
-            <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">Total Pemasukan (All-time)</p>
+            <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">Total Pemasukan Riil (All-time)</p>
             <ArrowUpRight size={16} className="text-brand-emerald" />
           </div>
-          <h3 className="text-2xl font-bold text-white mt-1.5">{formatRupiah(summary.totalIncome)}</h3>
-          <span className="text-[10px] text-slate-500 mt-1 block">Akumulasi struk lunas & kas masuk</span>
+          <h3 className="text-2xl font-bold text-white mt-1.5">{formatRupiah(allTimeSummary.totalIncome)}</h3>
+          <span className="text-[10px] text-slate-500 mt-1 block">Akumulasi struk lunas & kas masuk (di luar pindah saldo)</span>
         </div>
         <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
           <div className="flex justify-between items-center">
-            <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">Total Pengeluaran (All-time)</p>
+            <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">Total Pengeluaran Riil (All-time)</p>
             <ArrowDownRight size={16} className="text-brand-rose" />
           </div>
-          <h3 className="text-2xl font-bold text-white mt-1.5">{formatRupiah(summary.totalExpense)}</h3>
-          <span className="text-[10px] text-slate-500 mt-1 block">Akumulasi operasional, bahan baku & kasbon</span>
+          <h3 className="text-2xl font-bold text-white mt-1.5">{formatRupiah(allTimeSummary.totalExpense)}</h3>
+          <span className="text-[10px] text-slate-500 mt-1 block">Akumulasi beban operasional riil (di luar pindah saldo)</span>
         </div>
       </div>
 
@@ -1368,8 +1395,9 @@ const Finance = () => {
                   className="bg-slate-900 border border-slate-800 rounded-lg text-xs py-1 px-2.5 text-white"
                 >
                   <option value="all">Semua Arus</option>
-                  <option value="pemasukan">Pemasukan (+)</option>
-                  <option value="pengeluaran">Pengeluaran (-)</option>
+                  <option value="pemasukan">Pemasukan Murni (+)</option>
+                  <option value="pengeluaran">Pengeluaran Murni (-)</option>
+                  <option value="pindah">Pindah Saldo (Mutasi Rekening)</option>
                 </select>
                 <select
                   value={filterPos}
@@ -1422,18 +1450,25 @@ const Finance = () => {
                     </tr>
                   ) : (
                     paginatedList.map(item => {
+                      const isPindah = isPindahSaldo(item)
                       const isInc = parseFloat(item.pemasukan || 0) > 0
                       const nominal = isInc ? item.pemasukan : item.pengeluaran
                       return (
                         <tr key={item.id_cashflow} className="hover:bg-slate-850/30 transition-colors">
                           <td className="p-3 text-slate-400 font-mono">{item.tanggal}</td>
                           <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              isInc ? 'bg-brand-emerald/10 text-brand-emerald' : 'bg-brand-rose/10 text-brand-rose'
-                            }`}>
-                              {item.jenis || (isInc ? 'Pemasukan' : 'Pengeluaran')}
-                            </span>
-                            {item.kategori && <span className="ml-1 text-[10px] text-slate-500 font-sans">({item.kategori})</span>}
+                            {isPindah ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                                ⇄ Pindah Saldo
+                              </span>
+                            ) : (
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                isInc ? 'bg-brand-emerald/10 text-brand-emerald' : 'bg-brand-rose/10 text-brand-rose'
+                              }`}>
+                                {item.jenis || (isInc ? 'Pemasukan' : 'Pengeluaran')}
+                              </span>
+                            )}
+                            {item.kategori && !isPindah && <span className="ml-1 text-[10px] text-slate-500 font-sans">({item.kategori})</span>}
                           </td>
                           <td className="p-3 font-semibold text-white max-w-xs truncate">{item.keterangan_transaksi}</td>
                           <td className="p-3">
@@ -1441,8 +1476,11 @@ const Finance = () => {
                               {item.pos}
                             </span>
                           </td>
-                          <td className={`p-3 text-right font-mono font-bold ${isInc ? 'text-brand-emerald' : 'text-rose-400'}`}>
+                          <td className={`p-3 text-right font-mono font-bold ${
+                            isPindah ? 'text-sky-300' : (isInc ? 'text-brand-emerald' : 'text-rose-400')
+                          }`}>
                             {isInc ? '+' : '-'} {formatRupiah(nominal)}
+                            {isPindah && <span className="text-[9px] text-slate-500 block font-sans font-normal">[Mutasi Kas/Bank]</span>}
                           </td>
                           <td className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1.5">
