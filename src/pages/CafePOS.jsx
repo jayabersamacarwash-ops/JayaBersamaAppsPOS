@@ -2260,6 +2260,7 @@ const CafePOS = () => {
                   >
                     <option value="Operasional">Operasional</option>
                     <option value="Bahan Baku">Bahan Baku</option>
+                    <option value="Sewa">Sewa</option>
                     <option value="Casbon">Casbon Karyawan</option>
                     <option value="Ambil Uang Paketan">Ambil Uang Paketan</option>
                     <option value="Lain-lain">Lain-lain</option>

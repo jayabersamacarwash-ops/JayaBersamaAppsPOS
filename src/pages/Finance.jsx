@@ -122,7 +122,7 @@ const Finance = () => {
 
   // ENUM Options
   const jenisOptions = ['pengeluaran Cafe', 'pengeluaran Carwash', 'Pengeluaran', 'Casbon']
-  const kategoriOptions = ['Bahan Baku', 'Casbon', 'Operasional', 'Barang']
+  const kategoriOptions = ['Bahan Baku', 'Casbon', 'Operasional', 'Barang', 'Sewa']
   const incomeKategoriOptions = ['Pemasukan Lain-lain', 'Modal Awal', 'Pemasukan Cafe', 'Pemasukan Carwash']
   const posOptions = ['SALDO CASH', 'SALDO REKENING Y', 'SALDO REKENING N']
 
