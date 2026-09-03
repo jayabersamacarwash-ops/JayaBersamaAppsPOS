@@ -186,35 +186,40 @@ const Finance = () => {
         })
       }
 
+      // Helper to fetch all rows beyond 1000 rows
+      const fetchAllData = async (table, select = '*', orderCol = null) => {
+        let allData = []
+        let from = 0
+        const step = 1000
+        while (true) {
+          let query = supabase.from(table).select(select)
+          if (orderCol) {
+            query = query.order(orderCol, { ascending: false })
+          }
+          const { data, error } = await query.range(from, from + step - 1)
+          if (error) throw error
+          if (!data || data.length === 0) break
+          allData = allData.concat(data)
+          if (data.length < step) break
+          from += step
+        }
+        return allData
+      }
+
       // 2. Fetch Cashflow
-      const { data: cfData, error: cfErr } = await supabase
-        .from('cashflow')
-        .select('*')
-        .order('tanggal', { ascending: false })
-      if (cfErr) throw cfErr
+      const cfData = await fetchAllData('cashflow', '*', 'tanggal')
       setCashflowList(cfData || [])
 
       // 3. Fetch Carwash
-      const { data: cwData, error: cwErr } = await supabase
-        .from('carwash')
-        .select('*')
-        .order('tanggal', { ascending: false })
-      if (cwErr) throw cwErr
+      const cwData = await fetchAllData('carwash', '*', 'tanggal')
       setCarwashList(cwData || [])
 
       // 4. Fetch Cafe Detail
-      const { data: cafeData, error: cafeErr } = await supabase
-        .from('cafe')
-        .select('*, struk(tanggal, jam, kasir, metode_bayar, status_bayar)')
-      if (cafeErr) throw cafeErr
+      const cafeData = await fetchAllData('cafe', '*, struk(tanggal, jam, kasir, metode_bayar, status_bayar)')
       setCafeList(cafeData || [])
 
       // 5. Fetch Expenses (Pengeluaran)
-      const { data: expData, error: expErr } = await supabase
-        .from('pengeluaran')
-        .select('*')
-        .order('tanggal', { ascending: false })
-      if (expErr) throw expErr
+      const expData = await fetchAllData('pengeluaran', '*', 'tanggal')
       setExpensesList(expData || [])
 
       // 6. Fetch Stok Barang
@@ -1401,8 +1406,18 @@ const Finance = () => {
                 <tbody className="divide-y divide-slate-800/40">
                   {paginatedList.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-500 italic">
-                        Tidak ada log cashflow yang sesuai dengan filter.
+                      <td colSpan={6} className="p-10 text-center text-slate-400">
+                        <DollarSign size={32} className="mx-auto text-slate-600 mb-2 opacity-60" />
+                        <p className="font-bold text-sm text-slate-300">Tidak ada log cashflow pada periode ini ({activePeriodLabel})</p>
+                        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                          Gunakan filter tanggal di atas atau klik tombol berikut untuk melihat riwayat:
+                        </p>
+                        <button
+                          onClick={() => { setFilterPeriodMode('quick'); setQuickPreset('all'); }}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-brand-emerald/10 hover:bg-brand-emerald/20 text-brand-emerald border border-brand-emerald/30 text-xs font-bold transition-all"
+                        >
+                          Tampilkan Semua Waktu ({cashflowList.length} Transaksi)
+                        </button>
                       </td>
                     </tr>
                   ) : (
@@ -1571,8 +1586,18 @@ const Finance = () => {
                 <tbody className="divide-y divide-slate-800/40">
                   {paginatedList.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-500 italic">
-                        Tidak ada log carwash yang sesuai dengan filter.
+                      <td colSpan={7} className="p-10 text-center text-slate-400">
+                        <Car size={32} className="mx-auto text-slate-600 mb-2 opacity-60" />
+                        <p className="font-bold text-sm text-slate-300">Tidak ada log carwash pada periode ini ({activePeriodLabel})</p>
+                        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                          Gunakan filter tanggal di atas atau klik tombol berikut untuk melihat riwayat:
+                        </p>
+                        <button
+                          onClick={() => { setFilterPeriodMode('quick'); setQuickPreset('all'); }}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-brand-emerald/10 hover:bg-brand-emerald/20 text-brand-emerald border border-brand-emerald/30 text-xs font-bold transition-all"
+                        >
+                          Tampilkan Semua Waktu ({carwashList.length} Kendaraan)
+                        </button>
                       </td>
                     </tr>
                   ) : (
@@ -1723,8 +1748,18 @@ const Finance = () => {
                 <tbody className="divide-y divide-slate-800/40">
                   {paginatedList.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-500 italic">
-                        Tidak ada log cafe yang sesuai dengan filter.
+                      <td colSpan={7} className="p-10 text-center text-slate-400">
+                        <Coffee size={32} className="mx-auto text-slate-600 mb-2 opacity-60" />
+                        <p className="font-bold text-sm text-slate-300">Tidak ada log cafe pada periode ini ({activePeriodLabel})</p>
+                        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                          Data transaksi cafe di database berada pada periode April – Juli 2026. Anda dapat mengganti filter bulan di atas atau klik tombol berikut:
+                        </p>
+                        <button
+                          onClick={() => { setFilterPeriodMode('quick'); setQuickPreset('all'); }}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-brand-blue/10 hover:bg-brand-blue/20 text-brand-blue border border-brand-blue/30 text-xs font-bold transition-all"
+                        >
+                          Tampilkan Semua Waktu ({cafeList.length} Item)
+                        </button>
                       </td>
                     </tr>
                   ) : (
@@ -1865,8 +1900,18 @@ const Finance = () => {
                 <tbody className="divide-y divide-slate-800/40">
                   {paginatedList.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-500 italic">
-                        Tidak ada log pengeluaran yang sesuai dengan filter.
+                      <td colSpan={6} className="p-10 text-center text-slate-400">
+                        <Receipt size={32} className="mx-auto text-slate-600 mb-2 opacity-60" />
+                        <p className="font-bold text-sm text-slate-300">Tidak ada log pengeluaran pada periode ini ({activePeriodLabel})</p>
+                        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                          Gunakan filter tanggal di atas atau klik tombol berikut untuk melihat riwayat:
+                        </p>
+                        <button
+                          onClick={() => { setFilterPeriodMode('quick'); setQuickPreset('all'); }}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-brand-rose/10 hover:bg-brand-rose/20 text-brand-rose border border-brand-rose/30 text-xs font-bold transition-all"
+                        >
+                          Tampilkan Semua Waktu ({expensesList.length} Pengeluaran)
+                        </button>
                       </td>
                     </tr>
                   ) : (
