@@ -42,6 +42,7 @@ const Finance = () => {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [selectedMetricCategory, setSelectedMetricCategory] = useState(null)
 
   // Custom Alert / Confirm Modal State
   const [customAlert, setCustomAlert] = useState(null)
@@ -228,39 +229,42 @@ const Finance = () => {
     })
 
     // A. Owner: 1/3 of total cw revenue - accumulated expenses with description "bang awal"
-    const totalBangAwal = filteredCf
-      .filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('bang awal'))
-      .reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const ownerLogs = filteredCf.filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('bang awal'))
+    const totalBangAwal = ownerLogs.reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
     const ownerMetric = (totalCwRevenue / 3) - totalBangAwal
 
     // B. Operasional: 1/3 of total cw revenue - accumulated expenses carwash saja, di luar gaji karyawan & casbon
-    const totalCwExpNoWages = filteredCf
-      .filter(c => {
-        const isCw = String(c.jenis || '').toLowerCase().includes('carwash')
-        const isExp = parseFloat(c.pengeluaran || 0) > 0
-        const isWageOrCasbon = String(c.keterangan_transaksi || '').toLowerCase().includes('gaji') ||
-                               String(c.keterangan_transaksi || '').toLowerCase().includes('wage') ||
-                               String(c.keterangan_transaksi || '').toLowerCase().includes('pencuci') ||
-                               String(c.keterangan_transaksi || '').toLowerCase().includes('casbon') ||
-                               String(c.kategori || '').toLowerCase().includes('karyawan') ||
-                               String(c.kategori || '').toLowerCase().includes('casbon') ||
-                               String(c.jenis || '').toLowerCase().includes('casbon')
-        return isCw && isExp && !isWageOrCasbon
-      })
-      .reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const operasionalLogs = filteredCf.filter(c => {
+      const isCw = String(c.jenis || '').toLowerCase().includes('carwash')
+      const isExp = parseFloat(c.pengeluaran || 0) > 0
+      const isWageOrCasbon = String(c.keterangan_transaksi || '').toLowerCase().includes('gaji') ||
+                             String(c.keterangan_transaksi || '').toLowerCase().includes('wage') ||
+                             String(c.keterangan_transaksi || '').toLowerCase().includes('pencuci') ||
+                             String(c.keterangan_transaksi || '').toLowerCase().includes('casbon') ||
+                             String(c.kategori || '').toLowerCase().includes('karyawan') ||
+                             String(c.kategori || '').toLowerCase().includes('casbon') ||
+                             String(c.jenis || '').toLowerCase().includes('casbon')
+      return isCw && isExp && !isWageOrCasbon
+    })
+    const totalCwExpNoWages = operasionalLogs.reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
     const operasionalMetric = (totalCwRevenue / 3) - totalCwExpNoWages
 
     // C. Gaji Karyawan Cuci: 1/3 of total cw revenue - expenses with description "gaji karyawan cuci"
-    const totalWagesCw = filteredCf
-      .filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('gaji karyawan cuci'))
-      .reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
+    const gajiKaryawanLogs = filteredCf.filter(c => parseFloat(c.pengeluaran || 0) > 0 && String(c.keterangan_transaksi || '').toLowerCase().includes('gaji karyawan cuci'))
+    const totalWagesCw = gajiKaryawanLogs.reduce((sum, c) => sum + parseFloat(c.pengeluaran || 0), 0)
     const gajiKaryawanMetric = (totalCwRevenue / 3) - totalWagesCw
 
     return {
       owner: ownerMetric,
       operasional: operasionalMetric,
       gajiKaryawan: gajiKaryawanMetric,
-      totalCwRevenue
+      totalCwRevenue,
+      totalBangAwal,
+      totalCwExpNoWages,
+      totalWagesCw,
+      ownerLogs,
+      operasionalLogs,
+      gajiKaryawanLogs
     }
   }, [cwFinanceMetricsRaw, selectedMonth])
 
@@ -557,38 +561,171 @@ const Finance = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Owner */}
-          <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-slate-800/80">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Owner</p>
+          <div 
+            onClick={() => setSelectedMetricCategory(prev => prev === 'owner' ? null : 'owner')}
+            className={`glass-panel p-5 rounded-2xl relative overflow-hidden group border cursor-pointer transition-all duration-200 hover:scale-[1.01] ${
+              selectedMetricCategory === 'owner' 
+                ? 'border-brand-blue ring-2 ring-brand-blue/50 bg-slate-900/90 shadow-lg shadow-brand-blue/10' 
+                : 'border-slate-800/80 hover:border-slate-700'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Owner</p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                selectedMetricCategory === 'owner' ? 'bg-brand-blue text-slate-950' : 'bg-slate-800 text-slate-400 group-hover:text-white'
+              }`}>
+                {selectedMetricCategory === 'owner' ? '▼ Aktif' : 'Lihat Log'}
+              </span>
+            </div>
             <h3 className={`text-2xl font-black mt-2 ${filteredCwMetrics.owner >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
               {formatRupiah(filteredCwMetrics.owner)}
             </h3>
             <span className="text-[10px] text-slate-500 mt-2 block">
-              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Pengeluaran "bang awal"
+              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Pengeluaran "bang awal" ({formatRupiah(filteredCwMetrics.totalBangAwal)})
             </span>
           </div>
 
           {/* Operasional */}
-          <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-slate-800/80">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Operasional</p>
+          <div 
+            onClick={() => setSelectedMetricCategory(prev => prev === 'operasional' ? null : 'operasional')}
+            className={`glass-panel p-5 rounded-2xl relative overflow-hidden group border cursor-pointer transition-all duration-200 hover:scale-[1.01] ${
+              selectedMetricCategory === 'operasional' 
+                ? 'border-brand-blue ring-2 ring-brand-blue/50 bg-slate-900/90 shadow-lg shadow-brand-blue/10' 
+                : 'border-slate-800/80 hover:border-slate-700'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Operasional</p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                selectedMetricCategory === 'operasional' ? 'bg-brand-blue text-slate-950' : 'bg-slate-800 text-slate-400 group-hover:text-white'
+              }`}>
+                {selectedMetricCategory === 'operasional' ? '▼ Aktif' : 'Lihat Log'}
+              </span>
+            </div>
             <h3 className={`text-2xl font-black mt-2 ${filteredCwMetrics.operasional >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
               {formatRupiah(filteredCwMetrics.operasional)}
             </h3>
             <span className="text-[10px] text-slate-500 mt-2 block">
-              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Operasional Murni
+              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Operasional Murni ({formatRupiah(filteredCwMetrics.totalCwExpNoWages)})
             </span>
           </div>
 
           {/* Gaji Karyawan Cuci */}
-          <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group border border-slate-800/80">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Gaji Karyawan Cuci</p>
+          <div 
+            onClick={() => setSelectedMetricCategory(prev => prev === 'gajiKaryawan' ? null : 'gajiKaryawan')}
+            className={`glass-panel p-5 rounded-2xl relative overflow-hidden group border cursor-pointer transition-all duration-200 hover:scale-[1.01] ${
+              selectedMetricCategory === 'gajiKaryawan' 
+                ? 'border-brand-blue ring-2 ring-brand-blue/50 bg-slate-900/90 shadow-lg shadow-brand-blue/10' 
+                : 'border-slate-800/80 hover:border-slate-700'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Gaji Karyawan Cuci</p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                selectedMetricCategory === 'gajiKaryawan' ? 'bg-brand-blue text-slate-950' : 'bg-slate-800 text-slate-400 group-hover:text-white'
+              }`}>
+                {selectedMetricCategory === 'gajiKaryawan' ? '▼ Aktif' : 'Lihat Log'}
+              </span>
+            </div>
             <h3 className={`text-2xl font-black mt-2 ${filteredCwMetrics.gajiKaryawan >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
               {formatRupiah(filteredCwMetrics.gajiKaryawan)}
             </h3>
             <span className="text-[10px] text-slate-500 mt-2 block">
-              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Gaji Karyawan Cuci
+              1/3 Omzet ({formatRupiah(filteredCwMetrics.totalCwRevenue / 3)}) - Gaji Karyawan Cuci ({formatRupiah(filteredCwMetrics.totalWagesCw)})
             </span>
           </div>
         </div>
+
+        {/* Dedicated Transaction Breakdown Table when a Card is Clicked */}
+        {selectedMetricCategory && (
+          <div className="glass-panel p-6 rounded-2xl border border-brand-blue/40 bg-slate-900/80 animate-fade-in space-y-4 shadow-xl shadow-brand-blue/5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-brand-blue animate-pulse"></span>
+                  <span>
+                    {selectedMetricCategory === 'owner' && 'Rincian Pengeluaran Owner ("Bang Awal")'}
+                    {selectedMetricCategory === 'operasional' && 'Rincian Pengeluaran Operasional Carwash Murni'}
+                    {selectedMetricCategory === 'gajiKaryawan' && 'Rincian Pengeluaran Gaji Karyawan Cuci'}
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Periode: <strong className="text-slate-200">{monthOptions.find(m => m.value === selectedMonth)?.label || selectedMonth}</strong> • 
+                  Total Pengurangan: <strong className="text-rose-400 font-mono font-bold">
+                    {formatRupiah(
+                      selectedMetricCategory === 'owner' ? filteredCwMetrics.totalBangAwal :
+                      selectedMetricCategory === 'operasional' ? filteredCwMetrics.totalCwExpNoWages :
+                      filteredCwMetrics.totalWagesCw
+                    )}
+                  </strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedMetricCategory(null)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-bold border border-slate-700 transition-colors self-start sm:self-auto flex items-center gap-1.5"
+              >
+                ✕ Tutup Rincian
+              </button>
+            </div>
+
+            {(() => {
+              const logs = selectedMetricCategory === 'owner' ? filteredCwMetrics.ownerLogs :
+                           selectedMetricCategory === 'operasional' ? filteredCwMetrics.operasionalLogs :
+                           filteredCwMetrics.gajiKaryawanLogs
+
+              if (!logs || logs.length === 0) {
+                return (
+                  <div className="p-8 text-center text-slate-500 italic text-xs">
+                    Belum ada riwayat transaksi pengeluaran tercatat untuk kategori ini pada periode yang dipilih.
+                  </div>
+                )
+              }
+
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[600px] text-left text-xs text-slate-300">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[10px] bg-slate-950/40">
+                        <th className="p-3">Tanggal</th>
+                        <th className="p-3">Keterangan Transaksi</th>
+                        <th className="p-3">Kategori / Jenis</th>
+                        <th className="p-3">POS Kas</th>
+                        <th className="p-3 text-right">Nominal Pengeluaran</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/40 font-sans">
+                      {logs.map((item, idx) => (
+                        <tr key={item.id_cashflow || idx} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="p-3 text-slate-400 font-mono">
+                            {item.tanggal ? parseDateSafe(item.tanggal).toLocaleDateString('id-ID', {
+                              day: '2-digit',
+                              month: 'long',
+                              year: 'numeric'
+                            }) : '-'}
+                          </td>
+                          <td className="p-3 font-semibold text-white">{item.keterangan_transaksi}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
+                              {item.kategori || item.jenis || '-'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold text-slate-400 bg-slate-950 border border-slate-800">
+                              {item.pos || 'SALDO CASH'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-rose-400">
+                            -{formatRupiah(item.pengeluaran || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
+          </div>
+        )}
       </div>
 
       {/* Cashflow Logs Table */}
