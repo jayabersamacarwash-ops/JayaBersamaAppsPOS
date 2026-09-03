@@ -116,3 +116,47 @@ export const formatPosExpensePayload = ({ form, todayDate, currentTime, newExpId
     qty: 0
   }
 }
+
+export const validateEditCashflowForm = (form) => {
+  const pemasukanVal = parseFloat(form.pemasukan || 0)
+  const pengeluaranVal = parseFloat(form.pengeluaran || 0)
+  if (!form.keterangan_transaksi || !form.keterangan_transaksi.trim()) {
+    return { isValid: false, error: 'Keterangan transaksi wajib diisi.' }
+  }
+  if (pemasukanVal <= 0 && pengeluaranVal <= 0) {
+    return { isValid: false, error: 'Nominal pemasukan atau pengeluaran harus lebih besar dari 0.' }
+  }
+  return { isValid: true }
+}
+
+export const generateCSVString = (headers, rows) => {
+  const escapeCell = (cell) => {
+    if (cell === null || cell === undefined) return '""'
+    const str = String(cell).replace(/"/g, '""')
+    return `"${str}"`
+  }
+
+  const headerLine = headers.map(h => escapeCell(h.label)).join(',')
+  const rowLines = rows.map(row => {
+    return headers.map(h => {
+      const val = typeof h.accessor === 'function' ? h.accessor(row) : row[h.key]
+      return escapeCell(val)
+    }).join(',')
+  })
+
+  return '\uFEFF' + [headerLine, ...rowLines].join('\r\n')
+}
+
+export const downloadCSV = (csvContent, fileName) => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.setAttribute('href', url)
+  link.setAttribute('download', fileName.endsWith('.csv') ? fileName : `${fileName}.csv`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+

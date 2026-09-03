@@ -5,7 +5,9 @@ import {
   validateIncomeForm,
   formatIncomePayload,
   validatePosExpenseForm,
-  formatPosExpensePayload
+  formatPosExpensePayload,
+  validateEditCashflowForm,
+  generateCSVString
 } from '../financeHelpers'
 
 describe('Finance Helpers', () => {
@@ -195,4 +197,35 @@ describe('Finance Helpers', () => {
       })
     })
   })
+
+  describe('Edit Cashflow Validation', () => {
+    it('should validate edit cashflow form correctly', () => {
+      expect(validateEditCashflowForm({ keterangan_transaksi: '', pemasukan: 1000 }).isValid).toBe(false)
+      expect(validateEditCashflowForm({ keterangan_transaksi: 'Valid', pemasukan: 0, pengeluaran: 0 }).isValid).toBe(false)
+      expect(validateEditCashflowForm({ keterangan_transaksi: 'Valid', pemasukan: 50000, pengeluaran: 0 }).isValid).toBe(true)
+      expect(validateEditCashflowForm({ keterangan_transaksi: 'Valid', pemasukan: 0, pengeluaran: 25000 }).isValid).toBe(true)
+    })
+  })
+
+  describe('CSV Generation Helper', () => {
+    it('should generate properly escaped CSV with UTF-8 BOM', () => {
+      const headers = [
+        { label: 'Tanggal', key: 'tanggal' },
+        { label: 'Keterangan', key: 'keterangan' },
+        { label: 'Nominal', key: 'nominal' }
+      ]
+
+      const rows = [
+        { tanggal: '2026-08-01', keterangan: 'Beli "Kopi" & Teh', nominal: 25000 },
+        { tanggal: '2026-08-02', keterangan: 'Cuci Mobil, Paket Lengkap', nominal: 50000 }
+      ]
+
+      const csv = generateCSVString(headers, rows)
+      expect(csv.startsWith('\uFEFF')).toBe(true)
+      expect(csv).toContain('"Tanggal","Keterangan","Nominal"')
+      expect(csv).toContain('"2026-08-01","Beli ""Kopi"" & Teh","25000"')
+      expect(csv).toContain('"2026-08-02","Cuci Mobil, Paket Lengkap","50000"')
+    })
+  })
 })
+
