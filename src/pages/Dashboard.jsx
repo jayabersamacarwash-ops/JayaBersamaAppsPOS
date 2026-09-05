@@ -1399,11 +1399,11 @@ const Dashboard = () => {
                   Y
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400 font-semibold uppercase">Saldo Rekening Y (BCA)</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase">Saldo Rekening Y (Mandiri)</p>
                   <h4 className="text-lg font-bold text-white mt-0.5">{formatRupiah(posBalances.rekY)}</h4>
                 </div>
               </div>
-              <span className="text-xs text-slate-500 bg-slate-800/60 px-2.5 py-1 rounded-full font-medium">BCA Utama</span>
+              <span className="text-xs text-slate-500 bg-slate-800/60 px-2.5 py-1 rounded-full font-medium">Mandiri Utama</span>
             </div>
 
             <div className="glass-panel p-4 rounded-xl flex justify-between items-center border border-slate-800/80">

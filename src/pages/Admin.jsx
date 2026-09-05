@@ -1015,7 +1015,7 @@ const Admin = () => {
             {/* 2. Saldo Rekening Y */}
             <div className="space-y-2">
               <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-400 uppercase tracking-wider">SALDO REKENING Y (BCA Utama)</span>
+                <span className="font-semibold text-slate-400 uppercase tracking-wider">SALDO REKENING Y (Mandiri Utama)</span>
                 <span className="font-bold text-brand-emerald">Berjalan: {formatRupiah(balances.rekY)}</span>
               </div>
               <input
