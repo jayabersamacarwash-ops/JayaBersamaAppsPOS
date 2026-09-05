@@ -99,6 +99,7 @@ const Finance = () => {
   const [incomeForm, setIncomeForm] = useState({
     nominal: '',
     keterangan: '',
+    jenis: 'Pemasukan',
     kategori: 'Pemasukan Lain-lain',
     pos: 'SALDO CASH'
   })
@@ -129,11 +130,110 @@ const Finance = () => {
     status: 'Selesai'
   })
 
-  // ENUM Options
-  const jenisOptions = ['pengeluaran Cafe', 'pengeluaran Carwash', 'Pengeluaran', 'Casbon']
-  const kategoriOptions = ['Bahan Baku', 'Casbon', 'Operasional', 'Barang', 'Sewa']
-  const incomeKategoriOptions = ['Pemasukan Lain-lain', 'Modal Awal', 'Pemasukan Cafe', 'Pemasukan Carwash']
+  // Base Default Options
+  const defaultJenisOptions = ['pengeluaran Cafe', 'pengeluaran Carwash', 'Pengeluaran', 'Operasional', 'Casbon']
+  const defaultKategoriOptions = ['Operasional', 'Bahan Baku', 'Casbon', 'Barang', 'Sewa', 'Listrik & Air', 'Pemeliharaan', 'Gaji Karyawan', 'Lain-lain']
+  const defaultIncomeJenisOptions = ['Pemasukan', 'Pemasukan Cafe', 'Pemasukan Carwash', 'Pemasukan Lain-lain']
+  const defaultIncomeKategoriOptions = ['Pemasukan Lain-lain', 'Modal Awal', 'Pemasukan Cafe', 'Pemasukan Carwash', 'Sewa Tempat', 'Sponsor / Kerjasama', 'Bagi Hasil']
   const posOptions = ['SALDO CASH', 'SALDO REKENING Y', 'SALDO REKENING N', 'SALDO REKENING R']
+
+  // Custom Options State (from localStorage)
+  const [customJenisList, setCustomJenisList] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('jb_custom_jenis_list') || '[]') } catch { return [] }
+  })
+  const [customKategoriList, setCustomKategoriList] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('jb_custom_kategori_list') || '[]') } catch { return [] }
+  })
+  const [customIncomeJenisList, setCustomIncomeJenisList] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('jb_custom_income_jenis_list') || '[]') } catch { return [] }
+  })
+  const [customIncomeKategoriList, setCustomIncomeKategoriList] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('jb_custom_income_kategori_list') || '[]') } catch { return [] }
+  })
+
+  // Mode Custom input toggles
+  const [isCustomExpenseJenis, setIsCustomExpenseJenis] = useState(false)
+  const [isCustomExpenseKategori, setIsCustomExpenseKategori] = useState(false)
+  const [isCustomIncomeJenis, setIsCustomIncomeJenis] = useState(false)
+  const [isCustomIncomeKategori, setIsCustomIncomeKategori] = useState(false)
+
+  const saveCustomOption = (type, val) => {
+    if (!val || typeof val !== 'string' || !val.trim()) return
+    const trimmed = val.trim()
+    if (type === 'jenis') {
+      setCustomJenisList(prev => {
+        if (prev.includes(trimmed) || defaultJenisOptions.includes(trimmed)) return prev
+        const updated = [...prev, trimmed]
+        try { localStorage.setItem('jb_custom_jenis_list', JSON.stringify(updated)) } catch {}
+        return updated
+      })
+    } else if (type === 'kategori') {
+      setCustomKategoriList(prev => {
+        if (prev.includes(trimmed) || defaultKategoriOptions.includes(trimmed)) return prev
+        const updated = [...prev, trimmed]
+        try { localStorage.setItem('jb_custom_kategori_list', JSON.stringify(updated)) } catch {}
+        return updated
+      })
+    } else if (type === 'income_jenis') {
+      setCustomIncomeJenisList(prev => {
+        if (prev.includes(trimmed) || defaultIncomeJenisOptions.includes(trimmed)) return prev
+        const updated = [...prev, trimmed]
+        try { localStorage.setItem('jb_custom_income_jenis_list', JSON.stringify(updated)) } catch {}
+        return updated
+      })
+    } else if (type === 'income_kategori') {
+      setCustomIncomeKategoriList(prev => {
+        if (prev.includes(trimmed) || defaultIncomeKategoriOptions.includes(trimmed)) return prev
+        const updated = [...prev, trimmed]
+        try { localStorage.setItem('jb_custom_income_kategori_list', JSON.stringify(updated)) } catch {}
+        return updated
+      })
+    }
+  }
+
+  // Combined options (Default + Custom localStorage + Supabase database records)
+  const allJenisOptions = useMemo(() => {
+    const set = new Set([...defaultJenisOptions, ...customJenisList])
+    cashflowList.forEach(c => {
+      if (c.jenis && !isPindahSaldo(c)) set.add(c.jenis)
+    })
+    expensesList.forEach(e => {
+      if (e.jenis && !isPindahSaldo(e)) set.add(e.jenis)
+    })
+    return Array.from(set).filter(Boolean)
+  }, [customJenisList, cashflowList, expensesList])
+
+  const allKategoriOptions = useMemo(() => {
+    const set = new Set([...defaultKategoriOptions, ...customKategoriList])
+    cashflowList.forEach(c => {
+      if (c.kategori && !isPindahSaldo(c)) set.add(c.kategori)
+    })
+    expensesList.forEach(e => {
+      if (e.kategori && !isPindahSaldo(e)) set.add(e.kategori)
+    })
+    return Array.from(set).filter(Boolean)
+  }, [customKategoriList, cashflowList, expensesList])
+
+  const allIncomeJenisOptions = useMemo(() => {
+    const set = new Set([...defaultIncomeJenisOptions, ...customIncomeJenisList])
+    cashflowList.forEach(c => {
+      if (c.jenis && parseFloat(c.pemasukan || 0) > 0 && !isPindahSaldo(c)) set.add(c.jenis)
+    })
+    return Array.from(set).filter(Boolean)
+  }, [customIncomeJenisList, cashflowList])
+
+  const allIncomeKategoriOptions = useMemo(() => {
+    const set = new Set([...defaultIncomeKategoriOptions, ...customIncomeKategoriList])
+    cashflowList.forEach(c => {
+      if (c.kategori && parseFloat(c.pemasukan || 0) > 0 && !isPindahSaldo(c)) set.add(c.kategori)
+    })
+    return Array.from(set).filter(Boolean)
+  }, [customIncomeKategoriList, cashflowList])
+
+  // Backward compatibility alias
+  const jenisOptions = allJenisOptions
+  const kategoriOptions = allKategoriOptions
+  const incomeKategoriOptions = allIncomeKategoriOptions
 
   // Alert & Confirm Helpers
   const showAlert = (message, title = 'Informasi') => {
@@ -734,6 +834,10 @@ const Finance = () => {
         if (bmErr) throw bmErr
       }
 
+      // Save custom options if applicable
+      saveCustomOption('jenis', expenseForm.jenis)
+      saveCustomOption('kategori', expenseForm.kategori)
+
       setSuccess('Pengeluaran berhasil dicatat langsung ke Cashflow!')
       setExpenseForm({
         jenis: 'pengeluaran Cafe',
@@ -742,6 +846,8 @@ const Finance = () => {
         keterangan: '',
         pos: 'SALDO CASH'
       })
+      setIsCustomExpenseJenis(false)
+      setIsCustomExpenseKategori(false)
       setBarangMasukList([])
       setShowExpenseModal(false)
       await fetchFinanceData()
@@ -779,13 +885,20 @@ const Finance = () => {
       const { error: cfErr } = await supabase.from('cashflow').insert(payload)
       if (cfErr) throw cfErr
 
+      // Save custom options if applicable
+      saveCustomOption('income_jenis', incomeForm.jenis)
+      saveCustomOption('income_kategori', incomeForm.kategori)
+
       setSuccess('Pemasukan manual berhasil dicatat!')
       setIncomeForm({
         nominal: '',
         keterangan: '',
+        jenis: 'Pemasukan',
         kategori: 'Pemasukan Lain-lain',
         pos: 'SALDO CASH'
       })
+      setIsCustomIncomeJenis(false)
+      setIsCustomIncomeKategori(false)
       setShowIncomeModal(false)
       await fetchFinanceData()
       setTimeout(() => setSuccess(''), 3000)
@@ -2239,37 +2352,100 @@ const Finance = () => {
               <form onSubmit={handleSaveExpense} className="space-y-4 overflow-y-auto max-h-[50vh] pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Jenis Pengeluaran
-                    </label>
-                    <select
-                      value={expenseForm.jenis}
-                      onChange={(e) => setExpenseForm(prev => ({ ...prev, jenis: e.target.value }))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
-                    >
-                      {jenisOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Jenis Pengeluaran
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomExpenseJenis(!isCustomExpenseJenis)}
+                        className="text-[11px] text-brand-emerald hover:underline font-medium"
+                      >
+                        {isCustomExpenseJenis ? '← List' : '+ Custom'}
+                      </button>
+                    </div>
+                    {isCustomExpenseJenis ? (
+                      <input
+                        type="text"
+                        placeholder="Ketik jenis (contoh: Operasional Cafe)..."
+                        value={expenseForm.jenis}
+                        onChange={(e) => setExpenseForm(prev => ({ ...prev, jenis: e.target.value }))}
+                        className="w-full bg-slate-900 border border-brand-emerald rounded-lg py-2 px-3 text-white text-sm focus:outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <select
+                        value={expenseForm.jenis}
+                        onChange={(e) => {
+                          if (e.target.value === '__CUSTOM__') {
+                            setIsCustomExpenseJenis(true)
+                            setExpenseForm(prev => ({ ...prev, jenis: '' }))
+                          } else {
+                            setExpenseForm(prev => ({ ...prev, jenis: e.target.value }))
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-rose"
+                      >
+                        {allJenisOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__CUSTOM__">✨ + Custom (Ketik Sendiri)...</option>
+                      </select>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Kategori
-                    </label>
-                    <select
-                      value={expenseForm.kategori}
-                      onChange={(e) => {
-                        const newCat = e.target.value
-                        setExpenseForm(prev => ({ 
-                          ...prev, 
-                          kategori: newCat,
-                          total_harga: newCat === 'Bahan Baku' ? 0 : prev.total_harga
-                        }))
-                        if (newCat !== 'Bahan Baku') setBarangMasukList([])
-                      }}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
-                    >
-                      {kategoriOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Kategori
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomExpenseKategori(!isCustomExpenseKategori)}
+                        className="text-[11px] text-brand-emerald hover:underline font-medium"
+                      >
+                        {isCustomExpenseKategori ? '← List' : '+ Custom'}
+                      </button>
+                    </div>
+                    {isCustomExpenseKategori ? (
+                      <input
+                        type="text"
+                        placeholder="Ketik kategori (contoh: Listrik & Air)..."
+                        value={expenseForm.kategori}
+                        onChange={(e) => {
+                          const newCat = e.target.value
+                          setExpenseForm(prev => ({ 
+                            ...prev, 
+                            kategori: newCat,
+                            total_harga: newCat === 'Bahan Baku' ? 0 : prev.total_harga
+                          }))
+                          if (newCat !== 'Bahan Baku') setBarangMasukList([])
+                        }}
+                        className="w-full bg-slate-900 border border-brand-emerald rounded-lg py-2 px-3 text-white text-sm focus:outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <select
+                        value={expenseForm.kategori}
+                        onChange={(e) => {
+                          if (e.target.value === '__CUSTOM__') {
+                            setIsCustomExpenseKategori(true)
+                            setExpenseForm(prev => ({ ...prev, kategori: '' }))
+                            setBarangMasukList([])
+                          } else {
+                            const newCat = e.target.value
+                            setExpenseForm(prev => ({ 
+                              ...prev, 
+                              kategori: newCat,
+                              total_harga: newCat === 'Bahan Baku' ? 0 : prev.total_harga
+                            }))
+                            if (newCat !== 'Bahan Baku') setBarangMasukList([])
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-rose"
+                      >
+                        {allKategoriOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__CUSTOM__">✨ + Custom (Ketik Sendiri)...</option>
+                      </select>
+                    )}
                   </div>
 
                   <div>
@@ -2279,7 +2455,7 @@ const Finance = () => {
                     <select
                       value={expenseForm.pos}
                       onChange={(e) => setExpenseForm(prev => ({ ...prev, pos: e.target.value }))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-rose"
                     >
                       {posOptions.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
@@ -2419,18 +2595,87 @@ const Finance = () => {
               )}
 
               <form onSubmit={handleSaveIncome} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Kategori Pemasukan
-                    </label>
-                    <select
-                      value={incomeForm.kategori}
-                      onChange={(e) => setIncomeForm(prev => ({ ...prev, kategori: e.target.value }))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
-                    >
-                      {incomeKategoriOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Jenis Pemasukan
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomIncomeJenis(!isCustomIncomeJenis)}
+                        className="text-[11px] text-brand-emerald hover:underline font-medium"
+                      >
+                        {isCustomIncomeJenis ? '← List' : '+ Custom'}
+                      </button>
+                    </div>
+                    {isCustomIncomeJenis ? (
+                      <input
+                        type="text"
+                        placeholder="Ketik jenis..."
+                        value={incomeForm.jenis}
+                        onChange={(e) => setIncomeForm(prev => ({ ...prev, jenis: e.target.value }))}
+                        className="w-full bg-slate-900 border border-brand-emerald rounded-lg py-2 px-3 text-white text-sm focus:outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <select
+                        value={incomeForm.jenis}
+                        onChange={(e) => {
+                          if (e.target.value === '__CUSTOM__') {
+                            setIsCustomIncomeJenis(true)
+                            setIncomeForm(prev => ({ ...prev, jenis: '' }))
+                          } else {
+                            setIncomeForm(prev => ({ ...prev, jenis: e.target.value }))
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                      >
+                        {allIncomeJenisOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__CUSTOM__">✨ + Custom (Ketik Sendiri)...</option>
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Kategori Pemasukan
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomIncomeKategori(!isCustomIncomeKategori)}
+                        className="text-[11px] text-brand-emerald hover:underline font-medium"
+                      >
+                        {isCustomIncomeKategori ? '← List' : '+ Custom'}
+                      </button>
+                    </div>
+                    {isCustomIncomeKategori ? (
+                      <input
+                        type="text"
+                        placeholder="Ketik kategori..."
+                        value={incomeForm.kategori}
+                        onChange={(e) => setIncomeForm(prev => ({ ...prev, kategori: e.target.value }))}
+                        className="w-full bg-slate-900 border border-brand-emerald rounded-lg py-2 px-3 text-white text-sm focus:outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <select
+                        value={incomeForm.kategori}
+                        onChange={(e) => {
+                          if (e.target.value === '__CUSTOM__') {
+                            setIsCustomIncomeKategori(true)
+                            setIncomeForm(prev => ({ ...prev, kategori: '' }))
+                          } else {
+                            setIncomeForm(prev => ({ ...prev, kategori: e.target.value }))
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                      >
+                        {allIncomeKategoriOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__CUSTOM__">✨ + Custom (Ketik Sendiri)...</option>
+                      </select>
+                    )}
                   </div>
 
                   <div>
@@ -2689,7 +2934,7 @@ const Finance = () => {
                         required
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">POS Kas</label>
                         <select
@@ -2701,13 +2946,36 @@ const Finance = () => {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Jenis / Kategori</label>
+                        <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Jenis</label>
                         <input
                           type="text"
-                          value={editForm.jenis}
+                          list="edit-cf-jenis-list"
+                          placeholder="Jenis transaksi"
+                          value={editForm.jenis || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, jenis: e.target.value }))}
                           className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs"
                         />
+                        <datalist id="edit-cf-jenis-list">
+                          {Array.from(new Set([...allJenisOptions, ...allIncomeJenisOptions])).map((opt, i) => (
+                            <option key={i} value={opt} />
+                          ))}
+                        </datalist>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Kategori</label>
+                        <input
+                          type="text"
+                          list="edit-cf-kategori-list"
+                          placeholder="Kategori transaksi"
+                          value={editForm.kategori || ''}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, kategori: e.target.value }))}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs"
+                        />
+                        <datalist id="edit-cf-kategori-list">
+                          {Array.from(new Set([...allKategoriOptions, ...allIncomeKategoriOptions])).map((opt, i) => (
+                            <option key={i} value={opt} />
+                          ))}
+                        </datalist>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -2875,13 +3143,19 @@ const Finance = () => {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Kategori</label>
-                        <select
-                          value={editForm.kategori}
+                        <input
+                          type="text"
+                          list="edit-exp-kategori-list"
+                          placeholder="Kategori beban"
+                          value={editForm.kategori || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, kategori: e.target.value }))}
                           className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-white text-xs"
-                        >
-                          {kategoriOptions.map(k => <option key={k} value={k}>{k}</option>)}
-                        </select>
+                        />
+                        <datalist id="edit-exp-kategori-list">
+                          {allKategoriOptions.map((k, i) => (
+                            <option key={i} value={k} />
+                          ))}
+                        </datalist>
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">POS Kas</label>

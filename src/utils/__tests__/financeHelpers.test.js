@@ -160,6 +160,26 @@ describe('Finance Helpers', () => {
         created_at: '2026-08-06T15:22:00.000Z'
       })
     })
+
+    it('should format custom income jenis and custom kategori correctly', () => {
+      const form = {
+        keterangan: 'Sewa Lapak Booth',
+        nominal: 500000,
+        jenis: 'Pendapatan Sewa',
+        kategori: 'Sewa Lahan',
+        pos: 'SALDO REKENING Y'
+      }
+
+      const payload = formatIncomePayload({
+        form,
+        newCfId: 'cf-income-custom',
+        todayDate: '2026-08-06',
+        timestamp: '2026-08-06T15:22:00.000Z'
+      })
+
+      expect(payload.jenis).toBe('Pendapatan Sewa')
+      expect(payload.kategori).toBe('Sewa Lahan')
+    })
   })
 
   describe('POS Expense Validation & Formatting', () => {

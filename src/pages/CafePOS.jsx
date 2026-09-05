@@ -170,6 +170,7 @@ const CafePOS = () => {
     kategori: 'Operasional',
     karyawan: ''
   })
+  const [isCustomPosExpenseKat, setIsCustomPosExpenseKat] = useState(false)
   const [todayExpenses, setTodayExpenses] = useState([])
   const [editingExpenseId, setEditingExpenseId] = useState(null)
 
@@ -454,6 +455,7 @@ const CafePOS = () => {
         kategori: 'Operasional',
         karyawan: ''
       })
+      setIsCustomPosExpenseKat(false)
       await fetchTodayExpenses()
       await fetchCashierCash()
       setTimeout(() => setSuccess(false), 3000)
@@ -2252,19 +2254,47 @@ const CafePOS = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Kategori</label>
-                  <select
-                    value={posExpenseForm.kategori}
-                    onChange={(e) => setPosExpenseForm(prev => ({ ...prev, kategori: e.target.value }))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
-                  >
-                    <option value="Operasional">Operasional</option>
-                    <option value="Bahan Baku">Bahan Baku</option>
-                    <option value="Sewa">Sewa</option>
-                    <option value="Casbon">Casbon Karyawan</option>
-                    <option value="Ambil Uang Paketan">Ambil Uang Paketan</option>
-                    <option value="Lain-lain">Lain-lain</option>
-                  </select>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-400 uppercase">Kategori</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomPosExpenseKat(!isCustomPosExpenseKat)}
+                      className="text-[11px] text-brand-emerald hover:underline font-medium"
+                    >
+                      {isCustomPosExpenseKat ? '← Pilihan' : '+ Custom'}
+                    </button>
+                  </div>
+                  {isCustomPosExpenseKat ? (
+                    <input
+                      type="text"
+                      placeholder="Ketik kategori pengeluaran..."
+                      value={posExpenseForm.kategori}
+                      onChange={(e) => setPosExpenseForm(prev => ({ ...prev, kategori: e.target.value }))}
+                      className="w-full bg-slate-900 border border-brand-emerald rounded-lg px-3 py-2 text-white text-sm focus:outline-none"
+                      autoFocus
+                    />
+                  ) : (
+                    <select
+                      value={posExpenseForm.kategori}
+                      onChange={(e) => {
+                        if (e.target.value === '__CUSTOM__') {
+                          setIsCustomPosExpenseKat(true)
+                          setPosExpenseForm(prev => ({ ...prev, kategori: '' }))
+                        } else {
+                          setPosExpenseForm(prev => ({ ...prev, kategori: e.target.value }))
+                        }
+                      }}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                    >
+                      <option value="Operasional">Operasional</option>
+                      <option value="Bahan Baku">Bahan Baku</option>
+                      <option value="Sewa">Sewa</option>
+                      <option value="Casbon">Casbon Karyawan</option>
+                      <option value="Ambil Uang Paketan">Ambil Uang Paketan</option>
+                      <option value="Lain-lain">Lain-lain</option>
+                      <option value="__CUSTOM__">✨ + Custom (Ketik Sendiri)...</option>
+                    </select>
+                  )}
                 </div>
 
                 {['Casbon', 'Ambil Uang Paketan'].includes(posExpenseForm.kategori) && (
