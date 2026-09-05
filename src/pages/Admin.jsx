@@ -17,7 +17,13 @@ import {
   DollarSign,
   Users,
   Calendar,
-  Percent
+  Percent,
+  CalendarCheck,
+  RotateCcw,
+  FileText,
+  ArrowDownRight,
+  ArrowUpRight,
+  Wallet
 } from 'lucide-react'
 import { formatRupiah } from '../utils/helpers'
 import InteractiveCalendar from '../components/InteractiveCalendar'
@@ -116,6 +122,21 @@ const Admin = () => {
   // State Opname / Kebocoran
   const [opnameIngredient, setOpnameIngredient] = useState(null)
   const [stokFisik, setStokFisik] = useState('')
+
+  // State Tutup Kasir Manual (Susulan EOD)
+  const [manualEodDate, setManualEodDate] = useState(() => new Date().toLocaleDateString('en-CA'))
+  const [manualEodCashier, setManualEodCashier] = useState('Admin / Manual')
+  const [manualEodQrisPos, setManualEodQrisPos] = useState('SALDO REKENING Y')
+  const [manualEodLoading, setManualEodLoading] = useState(false)
+  const [manualEodProcessing, setManualEodProcessing] = useState(false)
+  const [manualEodData, setManualEodData] = useState({
+    strukList: [],
+    expenseList: [],
+    totalCash: 0,
+    totalQris: 0,
+    totalExpense: 0,
+    existingCashflows: []
+  })
 
   const loadAdminData = async () => {
     setLoading(true)
@@ -650,6 +671,161 @@ const Admin = () => {
     }
   }
 
+  // =========================================================
+  // LOGIKA TUTUP KASIR MANUAL / SUSULAN (BACKDATE EOD)
+  // =========================================================
+  const fetchManualEodPreview = async (targetDate) => {
+    if (!targetDate) return
+    setManualEodLoading(true)
+    try {
+      // 1. Ambil struk selesai pada tanggal target
+      const { data: strukData, error: sErr } = await supabase
+        .from('struk')
+        .select('*')
+        .eq('tanggal', targetDate)
+        .eq('status_bayar', 'Selesai')
+
+      if (sErr) throw sErr
+
+      // 2. Ambil pengeluaran kasir pada tanggal target
+      const { data: expData, error: eErr } = await supabase
+        .from('pengeluaran')
+        .select('*')
+        .eq('tanggal', targetDate)
+
+      if (eErr) throw eErr
+
+      // 3. Ambil cashflow existing pada tanggal target (mencari entri Tutup Kasir)
+      const { data: cfData, error: cfErr } = await supabase
+        .from('cashflow')
+        .select('*')
+        .eq('tanggal', targetDate)
+
+      if (cfErr) throw cfErr
+
+      let cashSum = 0
+      let qrisSum = 0
+      ;(strukData || []).forEach(s => {
+        if (s.metode_bayar === 'CASH') {
+          cashSum += parseFloat(s.total_tagihan || 0)
+        } else if (s.metode_bayar === 'QRIS') {
+          qrisSum += parseFloat(s.total_tagihan || 0)
+        } else if (s.metode_bayar === 'SPLIT') {
+          cashSum += parseFloat(s.nominal_cash || 0)
+          qrisSum += parseFloat(s.nominal_qris || 0)
+        }
+      })
+
+      const expSum = (expData || []).reduce((acc, item) => acc + (parseFloat(item.nominal) || 0), 0)
+
+      const existingRekap = (cfData || []).filter(c => {
+        const ket = String(c.keterangan_transaksi || '').toLowerCase()
+        const kat = String(c.kategori || '').toLowerCase()
+        return ket.includes('rekap tutup kasir') || ket.includes('tutup kasir') || kat.includes('omzet harian')
+      })
+
+      setManualEodData({
+        strukList: strukData || [],
+        expenseList: expData || [],
+        totalCash: cashSum,
+        totalQris: qrisSum,
+        totalExpense: expSum,
+        existingCashflows: existingRekap
+      })
+    } catch (err) {
+      console.error('Error fetching manual EOD preview:', err)
+    } finally {
+      setManualEodLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'manual-eod') {
+      fetchManualEodPreview(manualEodDate)
+    }
+  }, [activeTab, manualEodDate])
+
+  const handleExecuteManualEod = async () => {
+    if (manualEodData.totalCash === 0 && manualEodData.totalQris === 0 && manualEodData.totalExpense === 0) {
+      return setError(`Tidak ada data transaksi (Omzet/Pengeluaran) pada tanggal ${manualEodDate} untuk dimasukkan ke Cashflow.`)
+    }
+
+    if (manualEodData.existingCashflows.length > 0) {
+      const confirmDup = await showConfirm(
+        `PERINGATAN: Tanggal ${manualEodDate} sudah memiliki ${manualEodData.existingCashflows.length} entri rekap Tutup Kasir di tabel Cashflow.\n\nApakah Anda yakin ingin tetap memasukkan rekap susulan ini?`,
+        'Konfirmasi Rekap Susulan'
+      )
+      if (!confirmDup) return
+    } else {
+      const confirmAction = await showConfirm(
+        `Proses Rekap Tutup Kasir untuk tanggal ${manualEodDate}?\n\n• Pemasukan Cash: ${formatRupiah(manualEodData.totalCash)}\n• Pemasukan QRIS: ${formatRupiah(manualEodData.totalQris)} (${manualEodQrisPos})\n• Pengeluaran Kasir: ${formatRupiah(manualEodData.totalExpense)}\n• Kasir / Petugas: ${manualEodCashier}`,
+        'Proses Tutup Kasir Manual'
+      )
+      if (!confirmAction) return
+    }
+
+    setManualEodProcessing(true)
+    setError('')
+    try {
+      const timestamp = new Date().toISOString()
+      const insertions = []
+
+      if (manualEodData.totalCash > 0) {
+        insertions.push({
+          id_cashflow: self.crypto.randomUUID(),
+          tanggal: manualEodDate,
+          jenis: 'Pemasukan',
+          kategori: 'Omzet Harian (CASH)',
+          pemasukan: manualEodData.totalCash,
+          pengeluaran: 0,
+          pos: 'SALDO CASH',
+          keterangan_transaksi: `Rekap Tutup Kasir Manual (CASH) - Kasir: ${manualEodCashier}`,
+          created_at: timestamp
+        })
+      }
+
+      if (manualEodData.totalQris > 0) {
+        insertions.push({
+          id_cashflow: self.crypto.randomUUID(),
+          tanggal: manualEodDate,
+          jenis: 'Pemasukan',
+          kategori: 'Omzet Harian (QRIS)',
+          pemasukan: manualEodData.totalQris,
+          pengeluaran: 0,
+          pos: manualEodQrisPos,
+          keterangan_transaksi: `Rekap Tutup Kasir Manual (QRIS) - Kasir: ${manualEodCashier}`,
+          created_at: timestamp
+        })
+      }
+
+      if (manualEodData.totalExpense > 0) {
+        insertions.push({
+          id_cashflow: self.crypto.randomUUID(),
+          tanggal: manualEodDate,
+          jenis: 'pengeluaran Cafe',
+          kategori: 'Operasional',
+          pemasukan: 0,
+          pengeluaran: manualEodData.totalExpense,
+          pos: 'SALDO CASH',
+          keterangan_transaksi: `Rekap Pengeluaran Kasir Manual - Kasir: ${manualEodCashier}`,
+          created_at: timestamp
+        })
+      }
+
+      const { error: insErr } = await supabase.from('cashflow').insert(insertions)
+      if (insErr) throw insErr
+
+      setSuccess(`Berhasil memproses Tutup Kasir Manual untuk tanggal ${manualEodDate}! Data telah masuk ke Cashflow.`)
+      await fetchManualEodPreview(manualEodDate)
+      await loadAdminData()
+    } catch (err) {
+      console.error('Error executing manual EOD:', err)
+      setError(err.message || 'Gagal memproses Tutup Kasir Manual.')
+    } finally {
+      setManualEodProcessing(false)
+    }
+  }
+
 
 
 
@@ -725,6 +901,15 @@ const Admin = () => {
         >
           <Percent size={14} />
           Kelola Diskon
+        </button>
+        <button
+          onClick={() => setActiveTab('manual-eod')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+            activeTab === 'manual-eod' ? 'bg-amber-400 text-slate-950 shadow-md' : 'text-amber-400/80 hover:text-amber-300'
+          }`}
+        >
+          <CalendarCheck size={14} />
+          Tutup Kasir Manual (Susulan)
         </button>
       </div>
 
@@ -1192,6 +1377,266 @@ const Admin = () => {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* CONTENT TAB 7: Tutup Kasir Manual (Susulan EOD) */}
+      {activeTab === 'manual-eod' && (
+        <div className="space-y-6 max-w-5xl mx-auto">
+          {/* Header Panel */}
+          <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <CalendarCheck className="text-amber-400" size={20} />
+                  <span>Tutup Kasir Manual (Rekap Susulan ke Cashflow)</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Fitur darurat untuk merekap omzet (Cash & QRIS) serta pengeluaran harian kasir pada tanggal tertentu yang terlewat atau belum sempat di-End Kasir.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fetchManualEodPreview(manualEodDate)}
+                  disabled={manualEodLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700 transition-colors"
+                >
+                  <RotateCcw size={13} className={manualEodLoading ? 'animate-spin' : ''} />
+                  Segarkan Data
+                </button>
+              </div>
+            </div>
+
+            {/* Input Controls Filter Tanggal & Kasir */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                  1. Pilih Tanggal Transaksi
+                </label>
+                <input
+                  type="date"
+                  value={manualEodDate}
+                  onChange={(e) => setManualEodDate(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm font-mono focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                  2. Kasir / Petugas Rekap
+                </label>
+                <select
+                  value={manualEodCashier}
+                  onChange={(e) => setManualEodCashier(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:border-amber-400 focus:outline-none"
+                >
+                  <option value="Admin / Manual">Admin / Manual (Owner)</option>
+                  {cashiers.map(c => (
+                    <option key={c.id_kasir || c.nama_kasir} value={c.nama_kasir}>
+                      Kasir: {c.nama_kasir}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                  3. Rekening Penampung QRIS
+                </label>
+                <select
+                  value={manualEodQrisPos}
+                  onChange={(e) => setManualEodQrisPos(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:border-amber-400 focus:outline-none"
+                >
+                  <option value="SALDO REKENING Y">SALDO REKENING Y (Mandiri Utama)</option>
+                  <option value="SALDO REKENING N">SALDO REKENING N (Mandiri Operasional)</option>
+                  <option value="SALDO REKENING R">SALDO REKENING R</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Status Rekap di Cashflow */}
+            <div className="pt-2">
+              {manualEodData.existingCashflows.length === 0 ? (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={16} />
+                    <span><strong>Status: Belum Ada Rekap di Cashflow</strong> — Data omzet & pengeluaran untuk tanggal <strong>{manualEodDate}</strong> aman untuk dimasukkan.</span>
+                  </div>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Siap Proses</span>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold">
+                      <AlertCircle size={16} className="text-amber-400 shrink-0" />
+                      <span>Perhatian: Tanggal {manualEodDate} sudah memiliki {manualEodData.existingCashflows.length} transaksi rekap di Cashflow!</span>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">Sudah Ada Rekap</span>
+                  </div>
+                  <div className="pl-6 text-[11px] text-amber-200/80 space-y-1">
+                    {manualEodData.existingCashflows.map((cf, idx) => (
+                      <div key={cf.id_cashflow || idx} className="flex justify-between border-b border-amber-500/10 pb-1">
+                        <span>• {cf.keterangan_transaksi} ({cf.pos})</span>
+                        <strong className="font-mono">
+                          {cf.pemasukan > 0 ? `+${formatRupiah(cf.pemasukan)}` : `-${formatRupiah(cf.pengeluaran)}`}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Metric Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
+              <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Pemasukan Cash (Omzet Tunai)</span>
+              <h3 className="text-xl font-black text-brand-emerald mt-1">{formatRupiah(manualEodData.totalCash)}</h3>
+              <span className="text-[10px] text-slate-500 mt-1 block">Tujuan: SALDO CASH</span>
+            </div>
+
+            <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
+              <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Pemasukan QRIS / Transfer</span>
+              <h3 className="text-xl font-black text-cyan-400 mt-1">{formatRupiah(manualEodData.totalQris)}</h3>
+              <span className="text-[10px] text-slate-500 mt-1 block truncate">Tujuan: {manualEodQrisPos}</span>
+            </div>
+
+            <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
+              <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Pengeluaran Kasir</span>
+              <h3 className="text-xl font-black text-rose-400 mt-1">{formatRupiah(manualEodData.totalExpense)}</h3>
+              <span className="text-[10px] text-slate-500 mt-1 block">Sumber: SALDO CASH</span>
+            </div>
+
+            <div className="glass-panel p-4.5 rounded-2xl border border-slate-800/80">
+              <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Estimasi Kas Bersih Hari Ini</span>
+              <h3 className="text-xl font-black text-white mt-1">
+                {formatRupiah(manualEodData.totalCash + manualEodData.totalQris - manualEodData.totalExpense)}
+              </h3>
+              <span className="text-[10px] text-slate-500 mt-1 block">Total Omzet - Beban Kasir</span>
+            </div>
+          </div>
+
+          {/* Breakdown Tables (Struk Selesai & Pengeluaran Kasir) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Table 1: Struk Selesai */}
+            <div className="glass-panel p-5 rounded-2xl border border-slate-800/80 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText size={14} className="text-brand-blue" />
+                  Struk Transaksi Lunas ({manualEodData.strukList.length})
+                </h4>
+                <span className="text-xs font-mono font-bold text-emerald-400">
+                  Total: {formatRupiah(manualEodData.totalCash + manualEodData.totalQris)}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto max-h-60 overflow-y-auto pr-1">
+                {manualEodData.strukList.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-6 text-center">Tidak ada struk lunas pada tanggal {manualEodDate}</p>
+                ) : (
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-slate-500 font-bold border-b border-slate-800/80 text-[10px] uppercase">
+                        <th className="py-2">No. Struk</th>
+                        <th className="py-2">Metode</th>
+                        <th className="py-2 text-right">Tagihan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/40 text-slate-300">
+                      {manualEodData.strukList.map(s => (
+                        <tr key={s.id_struk} className="hover:bg-slate-850/30">
+                          <td className="py-2 font-mono text-[11px] text-slate-400">{s.id_struk}</td>
+                          <td className="py-2">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              s.metode_bayar === 'CASH' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-cyan-500/10 text-cyan-400'
+                            }`}>
+                              {s.metode_bayar}
+                            </span>
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold text-white">
+                            {formatRupiah(s.total_tagihan)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Table 2: Pengeluaran Kasir */}
+            <div className="glass-panel p-5 rounded-2xl border border-slate-800/80 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <ArrowDownRight size={14} className="text-rose-400" />
+                  Pengeluaran Kasir ({manualEodData.expenseList.length})
+                </h4>
+                <span className="text-xs font-mono font-bold text-rose-400">
+                  Total: {formatRupiah(manualEodData.totalExpense)}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto max-h-60 overflow-y-auto pr-1">
+                {manualEodData.expenseList.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-6 text-center">Tidak ada pengeluaran kasir pada tanggal {manualEodDate}</p>
+                ) : (
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-slate-500 font-bold border-b border-slate-800/80 text-[10px] uppercase">
+                        <th className="py-2">Keterangan</th>
+                        <th className="py-2">Kategori</th>
+                        <th className="py-2 text-right">Nominal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/40 text-slate-300">
+                      {manualEodData.expenseList.map(e => (
+                        <tr key={e.id_pengeluaran || e.id} className="hover:bg-slate-850/30">
+                          <td className="py-2 text-white font-medium">{e.nama_pengeluaran || e.keterangan}</td>
+                          <td className="py-2 text-slate-400 text-[11px]">{e.kategori || 'Operasional'}</td>
+                          <td className="py-2 text-right font-mono font-bold text-rose-400">
+                            -{formatRupiah(e.nominal)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Submission Button */}
+          <div className="glass-panel p-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-bold text-white">Siap Memasukkan Rekap ke Cashflow?</h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Sistem akan membuat 3 entri akuntansi (Omzet Cash, Omzet QRIS, dan Pengeluaran) pada tanggal <strong>{manualEodDate}</strong>.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExecuteManualEod}
+              disabled={manualEodProcessing || (manualEodData.totalCash === 0 && manualEodData.totalQris === 0 && manualEodData.totalExpense === 0)}
+              className="w-full sm:w-auto px-6 py-3 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl shadow-lg shadow-amber-400/20 transition-all text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+            >
+              {manualEodProcessing ? (
+                <>
+                  <RotateCcw size={16} className="animate-spin" />
+                  <span>Memproses Rekap...</span>
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  <span>Proses & Masukkan ke Cashflow</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}
