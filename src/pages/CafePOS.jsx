@@ -164,6 +164,7 @@ const CafePOS = () => {
 
   // POS State - Expense
   const [posExpenseForm, setPosExpenseForm] = useState({
+    tanggal: new Date().toLocaleDateString('en-CA'),
     keterangan: '',
     nominal: '',
     unit: 'Cafe',
@@ -449,6 +450,7 @@ const CafePOS = () => {
 
       setSuccess(true)
       setPosExpenseForm({
+        tanggal: new Date().toLocaleDateString('en-CA'),
         keterangan: '',
         nominal: '',
         unit: 'Cafe',
@@ -681,6 +683,7 @@ const CafePOS = () => {
     }
 
     setPosExpenseForm({
+      tanggal: exp.tanggal || new Date().toLocaleDateString('en-CA'),
       keterangan: cleanKeterangan,
       nominal: String(exp.nominal || ''),
       unit: exp.jenis ? exp.jenis.replace('pengeluaran ', '') : 'Cafe',
@@ -2239,7 +2242,18 @@ const CafePOS = () => {
             </div>
 
             <form onSubmit={handleSavePosExpense} className="space-y-4 max-w-xl shrink-0">
-              <div className={`grid grid-cols-1 ${posExpenseForm.kategori === 'Casbon' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
+              <div className={`grid grid-cols-1 ${posExpenseForm.kategori === 'Casbon' ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Tanggal</label>
+                  <input
+                    type="date"
+                    value={posExpenseForm.tanggal}
+                    onChange={(e) => setPosExpenseForm(prev => ({ ...prev, tanggal: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                    required
+                  />
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">Unit Usaha</label>
                   <select

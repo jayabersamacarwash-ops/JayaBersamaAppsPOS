@@ -21,11 +21,12 @@ export const formatExpensePayload = ({
 }) => {
   const totalVal = parseFloat(form.total_harga)
   const isBahanBaku = form.kategori === 'Bahan Baku' && barangMasukList && barangMasukList.length > 0
+  const txDate = form.tanggal || todayDate
 
   const cashflow = {
     id_cashflow: newCfId,
     id_sumber: null,
-    tanggal: todayDate,
+    tanggal: txDate,
     keterangan_transaksi: form.keterangan,
     jenis: form.jenis,
     kategori: form.kategori,
@@ -45,7 +46,7 @@ export const formatExpensePayload = ({
           id_pengeluaran: null,
           id_cashflow: newCfId,
           id_bahan_baku: item.id_bahan_baku,
-          tanggal: todayDate,
+          tanggal: txDate,
           nama_produk: matchingBahan ? (matchingBahan.nama_produk || matchingBahan.nama_bahan) : item.id_bahan_baku,
           jumlah_masuk: parseFloat(item.jumlah),
           harga_satuan: parseFloat(item.harga_satuan)
@@ -72,7 +73,7 @@ export const formatIncomePayload = ({ form, newCfId, todayDate, timestamp }) => 
   return {
     id_cashflow: newCfId,
     id_sumber: null,
-    tanggal: todayDate,
+    tanggal: form.tanggal || todayDate,
     keterangan_transaksi: form.keterangan,
     jenis: form.jenis || 'Pemasukan',
     kategori: form.kategori || 'Pemasukan Lain-lain',
@@ -105,9 +106,9 @@ export const formatPosExpensePayload = ({ form, todayDate, currentTime, newExpId
   
   return {
     id_pengeluaran: newExpId,
-    tanggal: todayDate,
-    jam: currentTime,
-    jenis: isCasbon ? 'Casbon' : (isPaketan ? 'Ambil Uang Paketan' : `pengeluaran ${form.unit}`),
+    tanggal: form.tanggal || todayDate,
+    jam: form.jam || currentTime,
+    jenis: isCasbon ? 'Casbon' : (isPaketan ? 'Ambil Uang Paketan' : (form.jenis || `pengeluaran ${form.unit}`)),
     kategori: isEmployeeRelated ? `${form.kategori} - ${form.karyawan}` : form.kategori,
     nominal: nominalVal,
     nama_pengeluaran: isEmployeeRelated ? `${form.kategori} ${form.karyawan} (${form.keterangan || 'Tanpa catatan'})` : form.keterangan,

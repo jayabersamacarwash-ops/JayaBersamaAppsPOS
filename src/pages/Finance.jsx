@@ -90,6 +90,7 @@ const Finance = () => {
 
   // Form States
   const [expenseForm, setExpenseForm] = useState({
+    tanggal: new Date().toLocaleDateString('en-CA'),
     jenis: 'pengeluaran Cafe',
     kategori: 'Operasional',
     total_harga: 0,
@@ -97,6 +98,7 @@ const Finance = () => {
     pos: 'SALDO CASH'
   })
   const [incomeForm, setIncomeForm] = useState({
+    tanggal: new Date().toLocaleDateString('en-CA'),
     nominal: '',
     keterangan: '',
     jenis: 'Pemasukan',
@@ -840,6 +842,7 @@ const Finance = () => {
 
       setSuccess('Pengeluaran berhasil dicatat langsung ke Cashflow!')
       setExpenseForm({
+        tanggal: new Date().toLocaleDateString('en-CA'),
         jenis: 'pengeluaran Cafe',
         kategori: 'Operasional',
         total_harga: 0,
@@ -891,6 +894,7 @@ const Finance = () => {
 
       setSuccess('Pemasukan manual berhasil dicatat!')
       setIncomeForm({
+        tanggal: new Date().toLocaleDateString('en-CA'),
         nominal: '',
         keterangan: '',
         jenis: 'Pemasukan',
@@ -2350,7 +2354,20 @@ const Finance = () => {
               )}
 
               <form onSubmit={handleSaveExpense} className="space-y-4 overflow-y-auto max-h-[50vh] pr-2">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Tanggal
+                    </label>
+                    <input
+                      type="date"
+                      value={expenseForm.tanggal}
+                      onChange={(e) => setExpenseForm(prev => ({ ...prev, tanggal: e.target.value }))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-rose"
+                      required
+                    />
+                  </div>
+
                   <div>
                     <div className="flex justify-between items-center mb-1.5">
                       <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -2367,7 +2384,7 @@ const Finance = () => {
                     {isCustomExpenseJenis ? (
                       <input
                         type="text"
-                        placeholder="Ketik jenis (contoh: Operasional Cafe)..."
+                        placeholder="Ketik jenis..."
                         value={expenseForm.jenis}
                         onChange={(e) => setExpenseForm(prev => ({ ...prev, jenis: e.target.value }))}
                         className="w-full bg-slate-900 border border-brand-emerald rounded-lg py-2 px-3 text-white text-sm focus:outline-none"
@@ -2408,7 +2425,7 @@ const Finance = () => {
                     {isCustomExpenseKategori ? (
                       <input
                         type="text"
-                        placeholder="Ketik kategori (contoh: Listrik & Air)..."
+                        placeholder="Ketik kategori..."
                         value={expenseForm.kategori}
                         onChange={(e) => {
                           const newCat = e.target.value
@@ -2595,7 +2612,20 @@ const Finance = () => {
               )}
 
               <form onSubmit={handleSaveIncome} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Tanggal
+                    </label>
+                    <input
+                      type="date"
+                      value={incomeForm.tanggal}
+                      onChange={(e) => setIncomeForm(prev => ({ ...prev, tanggal: e.target.value }))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
+                      required
+                    />
+                  </div>
+
                   <div>
                     <div className="flex justify-between items-center mb-1.5">
                       <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
