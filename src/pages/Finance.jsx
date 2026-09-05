@@ -124,7 +124,7 @@ const Finance = () => {
   const jenisOptions = ['pengeluaran Cafe', 'pengeluaran Carwash', 'Pengeluaran', 'Casbon']
   const kategoriOptions = ['Bahan Baku', 'Casbon', 'Operasional', 'Barang', 'Sewa']
   const incomeKategoriOptions = ['Pemasukan Lain-lain', 'Modal Awal', 'Pemasukan Cafe', 'Pemasukan Carwash']
-  const posOptions = ['SALDO CASH', 'SALDO REKENING Y', 'SALDO REKENING N']
+  const posOptions = ['SALDO CASH', 'SALDO REKENING Y', 'SALDO REKENING N', 'SALDO REKENING R']
 
   // Alert & Confirm Helpers
   const showAlert = (message, title = 'Informasi') => {

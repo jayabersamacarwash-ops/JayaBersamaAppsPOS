@@ -71,8 +71,8 @@ const Admin = () => {
   const [stokBahan, setStokBahan] = useState([])
   const [resepList, setResepList] = useState([])
 
-  const [balances, setBalances] = useState({ cash: 0, rekY: 0, rekN: 0 })
-  const [targetBalances, setTargetBalances] = useState({ cash: '', rekY: '', rekN: '' })
+  const [balances, setBalances] = useState({ cash: 0, rekY: 0, rekN: 0, rekR: 0 })
+  const [targetBalances, setTargetBalances] = useState({ cash: '', rekY: '', rekN: '', rekR: '' })
 
   // State Form Diskon
   const [discounts, setDiscounts] = useState([])
@@ -151,16 +151,17 @@ const Admin = () => {
 
       // Fetch POS Balances
       const { data: bal } = await supabase.from('pos_balances').select('*')
-      let cashVal = 0, rekYVal = 0, rekNVal = 0
+      let cashVal = 0, rekYVal = 0, rekNVal = 0, rekRVal = 0
       if (bal) {
         bal.forEach(item => {
           const val = parseFloat(item.balance) || 0
           if (item.pos === 'SALDO CASH') cashVal = val
           else if (item.pos === 'SALDO REKENING Y') rekYVal = val
           else if (item.pos === 'SALDO REKENING N') rekNVal = val
+          else if (item.pos === 'SALDO REKENING R') rekRVal = val
         })
       }
-      setBalances({ cash: cashVal, rekY: rekYVal, rekN: rekNVal })
+      setBalances({ cash: cashVal, rekY: rekYVal, rekN: rekNVal, rekR: rekRVal })
 
       setCashiers(realCashiers)
       setPaymentMethods(realPayments)
@@ -608,6 +609,25 @@ const Admin = () => {
         }
       }
 
+      // 4. Check Rekening R
+      if (targetBalances.rekR !== '') {
+        const target = parseFloat(targetBalances.rekR)
+        if (!isNaN(target)) {
+          const diff = target - balances.rekR
+          if (diff !== 0) {
+            inserts.push({
+              id_cashflow: self.crypto.randomUUID(),
+              tanggal: currentTimestamp,
+              jenis: diff > 0 ? 'Pemasukan' : 'Pengeluaran',
+              pos: 'SALDO REKENING R',
+              pemasukan: diff > 0 ? Math.abs(diff) : 0,
+              pengeluaran: diff < 0 ? Math.abs(diff) : 0,
+              keterangan_transaksi: 'Kalibrasi Saldo Rekening R (Penyesuaian Manual Admin)'
+            })
+          }
+        }
+      }
+
       if (inserts.length === 0) {
         setLoading(false)
         return setError('Tidak ada perubahan saldo yang dimasukkan.')
@@ -620,7 +640,7 @@ const Admin = () => {
       if (insertErr) throw insertErr
 
       setSuccess('Kalibrasi saldo berhasil dilakukan!')
-      setTargetBalances({ cash: '', rekY: '', rekN: '' })
+      setTargetBalances({ cash: '', rekY: '', rekN: '', rekR: '' })
       await loadAdminData()
     } catch (err) {
       console.error('Error calibrating balances:', err)
@@ -1018,6 +1038,21 @@ const Admin = () => {
                 placeholder="Masukkan target saldo baru (misal: 124437)"
                 value={targetBalances.rekN}
                 onChange={(e) => setTargetBalances(prev => ({ ...prev, rekN: e.target.value }))}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
+              />
+            </div>
+
+            {/* 4. Saldo Rekening R */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-slate-400 uppercase tracking-wider">SALDO REKENING R</span>
+                <span className="font-bold text-brand-emerald">Berjalan: {formatRupiah(balances.rekR)}</span>
+              </div>
+              <input
+                type="number"
+                placeholder="Masukkan target saldo baru Rekening R"
+                value={targetBalances.rekR}
+                onChange={(e) => setTargetBalances(prev => ({ ...prev, rekR: e.target.value }))}
                 className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm"
               />
             </div>

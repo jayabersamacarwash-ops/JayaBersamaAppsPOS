@@ -93,7 +93,7 @@ const Dashboard = () => {
   const [cashflowLogs, setCashflowLogs] = useState([])
   const [resepList, setResepList] = useState([])
   const [stokList, setStokList] = useState([])
-  const [posBalances, setPosBalances] = useState({ cash: 0, rekY: 0, rekN: 0 })
+  const [posBalances, setPosBalances] = useState({ cash: 0, rekY: 0, rekN: 0, rekR: 0 })
   const [allCarwashList, setAllCarwashList] = useState([])
 
   // Customer Filter & Search State
@@ -153,13 +153,14 @@ const Dashboard = () => {
 
       if (balErr) throw balErr
 
-      let cash = 0, rekY = 0, rekN = 0
+      let cash = 0, rekY = 0, rekN = 0, rekR = 0
       if (dbBal) {
         dbBal.forEach(item => {
           const bal = parseFloat(item.balance) || 0
           if (item.pos === 'SALDO CASH') cash = bal
           else if (item.pos === 'SALDO REKENING Y') rekY = bal
           else if (item.pos === 'SALDO REKENING N') rekN = bal
+          else if (item.pos === 'SALDO REKENING R') rekR = bal
         })
       }
 
@@ -169,7 +170,7 @@ const Dashboard = () => {
       setCashflowLogs(dbCf || [])
       setResepList(dbResep || [])
       setStokList(dbStok || [])
-      setPosBalances({ cash, rekY, rekN })
+      setPosBalances({ cash, rekY, rekN, rekR })
 
     } catch (err) {
       console.error('Error fetching analytics data:', err)
@@ -1391,7 +1392,7 @@ const Dashboard = () => {
           </div>
 
           {/* Saldo Bank & Rekening */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="glass-panel p-4 rounded-xl flex justify-between items-center border border-slate-800/80">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
@@ -1416,6 +1417,19 @@ const Dashboard = () => {
                 </div>
               </div>
               <span className="text-xs text-slate-500 bg-slate-800/60 px-2.5 py-1 rounded-full font-medium">Mandiri Operational</span>
+            </div>
+
+            <div className="glass-panel p-4 rounded-xl flex justify-between items-center border border-slate-800/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold">
+                  R
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 font-semibold uppercase">Saldo Rekening R</p>
+                  <h4 className="text-lg font-bold text-white mt-0.5">{formatRupiah(posBalances.rekR)}</h4>
+                </div>
+              </div>
+              <span className="text-xs text-slate-500 bg-slate-800/60 px-2.5 py-1 rounded-full font-medium">Rekening R</span>
             </div>
           </div>
 
@@ -2095,7 +2109,7 @@ const Dashboard = () => {
                 II. Laporan Rekonsiliasi & Posisi Saldo Kas (Cash Position)
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3 print:gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4 print:gap-2">
                 <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center print:border-black print:bg-transparent">
                   <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold print:text-black">Saldo Tunai (Laci Cash)</span>
                   <h4 className="text-lg font-black text-white mt-1 print:text-black">{formatRupiah(posBalances.cash)}</h4>
@@ -2108,12 +2122,16 @@ const Dashboard = () => {
                   <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold print:text-black">Saldo Rekening N</span>
                   <h4 className="text-lg font-black text-white mt-1 print:text-black">{formatRupiah(posBalances.rekN)}</h4>
                 </div>
+                <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center print:border-black print:bg-transparent">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold print:text-black">Saldo Rekening R</span>
+                  <h4 className="text-lg font-black text-white mt-1 print:text-black">{formatRupiah(posBalances.rekR)}</h4>
+                </div>
               </div>
 
               <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50 flex justify-between items-center text-xs font-bold print:border-black print:bg-slate-100">
                 <span className="text-slate-400 print:text-black">TOTAL KAS BERSIH PERUSAHAAN</span>
                 <span className="text-brand-emerald text-sm font-black print:text-black">
-                  {formatRupiah(posBalances.cash + posBalances.rekY + posBalances.rekN)}
+                  {formatRupiah(posBalances.cash + posBalances.rekY + posBalances.rekN + posBalances.rekR)}
                 </span>
               </div>
             </div>
