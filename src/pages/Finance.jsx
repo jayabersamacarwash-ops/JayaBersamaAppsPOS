@@ -82,6 +82,7 @@ const Finance = () => {
   // Modal States
   const [showExpenseModal, setShowExpenseModal] = useState(false)
   const [showIncomeModal, setShowIncomeModal] = useState(false)
+  const [showTransferModal, setShowTransferModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [customAlert, setCustomAlert] = useState(null)
@@ -99,6 +100,13 @@ const Finance = () => {
     keterangan: '',
     kategori: 'Pemasukan Lain-lain',
     pos: 'SALDO CASH'
+  })
+  const [transferForm, setTransferForm] = useState({
+    tanggal: new Date().toLocaleDateString('en-CA'),
+    pos_asal: 'SALDO CASH',
+    pos_tujuan: 'SALDO REKENING Y',
+    nominal: '',
+    keterangan: ''
   })
   const [barangMasukList, setBarangMasukList] = useState([])
 
@@ -788,6 +796,74 @@ const Finance = () => {
     }
   }
 
+  // 2B. Process Pindah Saldo (Transfer Antar Rekening/Kas)
+  const handleSaveTransfer = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+
+    const nom = parseFloat(transferForm.nominal)
+    if (isNaN(nom) || nom <= 0) {
+      return setError('Nominal perpindahan saldo harus lebih besar dari 0.')
+    }
+    if (transferForm.pos_asal === transferForm.pos_tujuan) {
+      return setError('Pos asal dan Pos tujuan tidak boleh sama.')
+    }
+
+    setSubmitting(true)
+    try {
+      const timestamp = new Date().toISOString()
+      const ket = transferForm.keterangan?.trim() || `Pindah Saldo dari ${transferForm.pos_asal} ke ${transferForm.pos_tujuan}`
+
+      const insertions = [
+        // 1. Pengeluaran dari Pos Asal
+        {
+          id_cashflow: generateUUID(),
+          tanggal: transferForm.tanggal || new Date().toLocaleDateString('en-CA'),
+          jenis: 'Pindah',
+          kategori: 'Pindah',
+          pos: transferForm.pos_asal,
+          pemasukan: 0,
+          pengeluaran: nom,
+          keterangan_transaksi: ket,
+          created_at: timestamp
+        },
+        // 2. Pemasukan ke Pos Tujuan
+        {
+          id_cashflow: generateUUID(),
+          tanggal: transferForm.tanggal || new Date().toLocaleDateString('en-CA'),
+          jenis: 'Pindah',
+          kategori: 'Pindah',
+          pos: transferForm.pos_tujuan,
+          pemasukan: nom,
+          pengeluaran: 0,
+          keterangan_transaksi: ket,
+          created_at: timestamp
+        }
+      ]
+
+      const { error: insErr } = await supabase.from('cashflow').insert(insertions)
+      if (insErr) throw insErr
+
+      setSuccess(`Berhasil memindahkan saldo sebesar ${formatRupiah(nom)} dari ${transferForm.pos_asal} ke ${transferForm.pos_tujuan}!`)
+      setShowTransferModal(false)
+      setTransferForm({
+        tanggal: new Date().toLocaleDateString('en-CA'),
+        pos_asal: 'SALDO CASH',
+        pos_tujuan: 'SALDO REKENING Y',
+        nominal: '',
+        keterangan: ''
+      })
+      await fetchFinanceData()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err) {
+      console.error('Error transferring balance:', err)
+      setError(err.message || 'Gagal memproses pindah saldo.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // 3. Open Edit Modal
   const handleOpenEdit = (item, type) => {
     setEditingItem(item)
@@ -1044,6 +1120,13 @@ const Finance = () => {
           >
             <Plus size={15} />
             + Pengeluaran
+          </button>
+          <button
+            onClick={() => setShowTransferModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all text-xs"
+          >
+            <RotateCcw size={14} />
+            ⇄ Pindah Saldo
           </button>
         </div>
       </div>
@@ -2406,6 +2489,140 @@ const Finance = () => {
                 className="px-4 py-2 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-500 text-slate-950 font-bold rounded-xl text-sm disabled:opacity-50"
               >
                 {submitting ? 'Menyimpan...' : 'Simpan Transaksi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2B: PINDAH SALDO (TRANSFER ANTAR REKENING/KAS) */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
+          <div className="glass-panel w-full max-w-xl p-6 rounded-2xl shadow-2xl border border-slate-800 max-h-[90vh] flex flex-col justify-between animate-pop-in">
+            <div>
+              <div className="flex justify-between items-center border-b border-slate-800 pb-4 mb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <RotateCcw className="text-sky-400" />
+                  Pindah Saldo (Mutasi Kas / Bank)
+                </h3>
+                <button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+              </div>
+
+              {error && (
+                <div className="mb-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveTransfer} className="space-y-4">
+                {/* Tanggal */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Tanggal Perpindahan
+                  </label>
+                  <input
+                    type="date"
+                    value={transferForm.tanggal}
+                    onChange={(e) => setTransferForm(prev => ({ ...prev, tanggal: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm font-mono focus:outline-none focus:border-sky-400"
+                    required
+                  />
+                </div>
+
+                {/* Dropdowns Dari POS Asal ke POS Tujuan */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <label className="block text-xs font-bold text-rose-400 uppercase tracking-wider">
+                      1. Dari Pos Kas (Sumber / Asal)
+                    </label>
+                    <select
+                      value={transferForm.pos_asal}
+                      onChange={(e) => setTransferForm(prev => ({ ...prev, pos_asal: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-white text-xs font-semibold focus:outline-none focus:border-rose-400"
+                    >
+                      {posOptions.map(p => (
+                        <option key={p} value={p}>
+                          {p} (Saldo: {formatRupiah(posAllTimeBalances[p === 'SALDO CASH' ? 'cash' : p === 'SALDO REKENING Y' ? 'rekY' : p === 'SALDO REKENING N' ? 'rekN' : 'rekR'])})
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">Saldo akan berkurang (-)</span>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <label className="block text-xs font-bold text-brand-emerald uppercase tracking-wider">
+                      2. Ke Pos Kas (Tujuan)
+                    </label>
+                    <select
+                      value={transferForm.pos_tujuan}
+                      onChange={(e) => setTransferForm(prev => ({ ...prev, pos_tujuan: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-white text-xs font-semibold focus:outline-none focus:border-brand-emerald"
+                    >
+                      {posOptions.map(p => (
+                        <option key={p} value={p}>
+                          {p} (Saldo: {formatRupiah(posAllTimeBalances[p === 'SALDO CASH' ? 'cash' : p === 'SALDO REKENING Y' ? 'rekY' : p === 'SALDO REKENING N' ? 'rekN' : 'rekR'])})
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">Saldo akan bertambah (+)</span>
+                  </div>
+                </div>
+
+                {/* Nominal */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Nominal Perpindahan (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Contoh: 1500000"
+                    value={transferForm.nominal}
+                    onChange={(e) => setTransferForm(prev => ({ ...prev, nominal: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2.5 px-3 text-white text-base font-mono font-bold focus:outline-none focus:border-sky-400"
+                    required
+                  />
+                </div>
+
+                {/* Keterangan */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Keterangan / Catatan (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={`Pindah Saldo dari ${transferForm.pos_asal} ke ${transferForm.pos_tujuan}`}
+                    value={transferForm.keterangan}
+                    onChange={(e) => setTransferForm(prev => ({ ...prev, keterangan: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+
+                {/* Preview Mutasi Box */}
+                {parseFloat(transferForm.nominal) > 0 && (
+                  <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300 flex items-center justify-between">
+                    <span>Mutasi Antar Kas:</span>
+                    <strong className="font-mono">{transferForm.pos_asal} ➔ {transferForm.pos_tujuan} ({formatRupiah(parseFloat(transferForm.nominal))})</strong>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-800 pt-4 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowTransferModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                onClick={handleSaveTransfer}
+                disabled={submitting || !parseFloat(transferForm.nominal)}
+                className="px-5 py-2 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-black rounded-xl text-sm disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-sky-500/20 transition-all"
+              >
+                {submitting ? 'Memproses...' : 'Konfirmasi Pindah Saldo'}
               </button>
             </div>
           </div>
