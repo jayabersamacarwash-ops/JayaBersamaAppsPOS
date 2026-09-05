@@ -345,11 +345,34 @@ const Finance = () => {
     }
   }, [cashflowList])
 
+  // Saldo Fisik & Rekening Real-time (All-time per masing-masing POS)
+  const posAllTimeBalances = useMemo(() => {
+    let cash = 0
+    let rekY = 0
+    let rekN = 0
+    let rekR = 0
+
+    cashflowList.forEach(item => {
+      const p = parseFloat(item.pemasukan || 0)
+      const k = parseFloat(item.pengeluaran || 0)
+      const net = p - k
+
+      if (item.pos === 'SALDO CASH') cash += net
+      else if (item.pos === 'SALDO REKENING Y') rekY += net
+      else if (item.pos === 'SALDO REKENING N') rekN += net
+      else if (item.pos === 'SALDO REKENING R') rekR += net
+    })
+
+    return { cash, rekY, rekN, rekR }
+  }, [cashflowList])
+
   const cashflowKpis = useMemo(() => {
     let inc = 0
     let exp = 0
     let cashNet = 0
-    let bankNet = 0
+    let rekYNet = 0
+    let rekNNet = 0
+    let rekRNet = 0
 
     filteredCashflow.forEach(item => {
       const p = parseFloat(item.pemasukan || 0)
@@ -363,14 +386,23 @@ const Finance = () => {
       }
 
       // Mutasi per dompet kas (Laci Cash & Rekening Bank) tetap mencatat perpindahan fisik
-      if (item.pos === 'SALDO CASH') {
-        cashNet += (p - k)
-      } else {
-        bankNet += (p - k)
-      }
+      const net = p - k
+      if (item.pos === 'SALDO CASH') cashNet += net
+      else if (item.pos === 'SALDO REKENING Y') rekYNet += net
+      else if (item.pos === 'SALDO REKENING N') rekNNet += net
+      else if (item.pos === 'SALDO REKENING R') rekRNet += net
     })
 
-    return { totalInc: inc, totalExp: exp, netKas: inc - exp, cashNet, bankNet }
+    return {
+      totalInc: inc,
+      totalExp: exp,
+      netKas: inc - exp,
+      cashNet,
+      rekYNet,
+      rekNNet,
+      rekRNet,
+      bankNet: rekYNet + rekNNet + rekRNet
+    }
   }, [filteredCashflow])
 
   // Carwash Segmented Metrics (Owner, Operasional, Gaji Kru)
@@ -1057,6 +1089,57 @@ const Finance = () => {
         </div>
       </div>
 
+      {/* Real-Time Wallet Balances Cards (Laci Cash, Mandiri Utama, Mandiri Ops, Rekening R) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="glass-panel p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+          <div>
+            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Laci Kasir (Cash)</span>
+            <h4 className={`text-base md:text-lg font-black mt-0.5 ${posAllTimeBalances.cash >= 0 ? 'text-white' : 'text-rose-400'}`}>
+              {formatRupiah(posAllTimeBalances.cash)}
+            </h4>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-slate-800/80 text-slate-300 flex items-center justify-center font-bold text-xs">
+            💵
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+          <div>
+            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Mandiri Utama (Rek Y)</span>
+            <h4 className={`text-base md:text-lg font-black mt-0.5 ${posAllTimeBalances.rekY >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
+              {formatRupiah(posAllTimeBalances.rekY)}
+            </h4>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">
+            Y
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+          <div>
+            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Mandiri Ops (Rek N)</span>
+            <h4 className={`text-base md:text-lg font-black mt-0.5 ${posAllTimeBalances.rekN >= 0 ? 'text-brand-blue' : 'text-rose-400'}`}>
+              {formatRupiah(posAllTimeBalances.rekN)}
+            </h4>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-brand-blue/10 text-brand-blue flex items-center justify-center font-bold text-xs">
+            N
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+          <div>
+            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">Saldo Rekening R</span>
+            <h4 className={`text-base md:text-lg font-black mt-0.5 ${posAllTimeBalances.rekR >= 0 ? 'text-purple-400' : 'text-rose-400'}`}>
+              {formatRupiah(posAllTimeBalances.rekR)}
+            </h4>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xs">
+            R
+          </div>
+        </div>
+      </div>
+
       {/* Universal Flexible Filter Panel */}
       <div className="glass-panel p-4 md:p-5 rounded-2xl border border-slate-800 space-y-3.5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
@@ -1215,25 +1298,37 @@ const Finance = () => {
       {activeTab === 'cashflow' && (
         <div className="space-y-6 animate-fade-in">
           {/* Mini KPI Bar */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[10px] text-slate-500 font-bold uppercase">Pemasukan Periode Ini</span>
-              <p className="text-base md:text-lg font-black text-brand-emerald mt-1">{formatRupiah(cashflowKpis.totalInc)}</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Pemasukan Periode</span>
+              <p className="text-sm md:text-base font-black text-brand-emerald mt-1">{formatRupiah(cashflowKpis.totalInc)}</p>
             </div>
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[10px] text-slate-500 font-bold uppercase">Pengeluaran Periode Ini</span>
-              <p className="text-base md:text-lg font-black text-rose-400 mt-1">{formatRupiah(cashflowKpis.totalExp)}</p>
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Pengeluaran Periode</span>
+              <p className="text-sm md:text-base font-black text-rose-400 mt-1">{formatRupiah(cashflowKpis.totalExp)}</p>
             </div>
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[10px] text-slate-500 font-bold uppercase">Net Saldo Cash (Laci)</span>
-              <p className={`text-base md:text-lg font-black mt-1 ${cashflowKpis.cashNet >= 0 ? 'text-white' : 'text-rose-400'}`}>
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Net Laci Cash</span>
+              <p className={`text-sm md:text-base font-black mt-1 ${cashflowKpis.cashNet >= 0 ? 'text-white' : 'text-rose-400'}`}>
                 {formatRupiah(cashflowKpis.cashNet)}
               </p>
             </div>
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[10px] text-slate-500 font-bold uppercase">Net Saldo Bank/QRIS</span>
-              <p className={`text-base md:text-lg font-black mt-1 ${cashflowKpis.bankNet >= 0 ? 'text-brand-blue' : 'text-rose-400'}`}>
-                {formatRupiah(cashflowKpis.bankNet)}
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Net Rekening Y</span>
+              <p className={`text-sm md:text-base font-black mt-1 ${cashflowKpis.rekYNet >= 0 ? 'text-brand-emerald' : 'text-rose-400'}`}>
+                {formatRupiah(cashflowKpis.rekYNet)}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Net Rekening N</span>
+              <p className={`text-sm md:text-base font-black mt-1 ${cashflowKpis.rekNNet >= 0 ? 'text-brand-blue' : 'text-rose-400'}`}>
+                {formatRupiah(cashflowKpis.rekNNet)}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Net Rekening R</span>
+              <p className={`text-sm md:text-base font-black mt-1 ${cashflowKpis.rekRNet >= 0 ? 'text-purple-400' : 'text-rose-400'}`}>
+                {formatRupiah(cashflowKpis.rekRNet)}
               </p>
             </div>
           </div>
