@@ -34,7 +34,9 @@ import {
   validateEditCashflowForm,
   generateCSVString,
   downloadCSV,
-  isPindahSaldo
+  isPindahSaldo,
+  normalizeCategory,
+  normalizeJenis
 } from '../utils/financeHelpers'
 
 const Finance = () => {
@@ -91,7 +93,7 @@ const Finance = () => {
   // Form States
   const [expenseForm, setExpenseForm] = useState({
     tanggal: new Date().toLocaleDateString('en-CA'),
-    jenis: 'pengeluaran Cafe',
+    jenis: 'Pengeluaran Cafe',
     kategori: 'Operasional',
     total_harga: 0,
     keterangan: '',
@@ -132,11 +134,11 @@ const Finance = () => {
     status: 'Selesai'
   })
 
-  // Base Default Options
-  const defaultJenisOptions = ['pengeluaran Cafe', 'pengeluaran Carwash', 'Pengeluaran', 'Operasional', 'Casbon']
-  const defaultKategoriOptions = ['Operasional', 'Bahan Baku', 'Casbon', 'Barang', 'Sewa', 'Listrik & Air', 'Pemeliharaan', 'Gaji Karyawan', 'Lain-lain']
-  const defaultIncomeJenisOptions = ['Pemasukan', 'Pemasukan Cafe', 'Pemasukan Carwash', 'Pemasukan Lain-lain']
-  const defaultIncomeKategoriOptions = ['Pemasukan Lain-lain', 'Modal Awal', 'Pemasukan Cafe', 'Pemasukan Carwash', 'Sewa Tempat', 'Sponsor / Kerjasama', 'Bagi Hasil']
+  // Base Default Options (Concise, Clean & Standard Title Case)
+  const defaultJenisOptions = ['Pengeluaran Cafe', 'Pengeluaran Carwash', 'Pengeluaran Bersama', 'Operasional', 'Casbon']
+  const defaultKategoriOptions = ['Operasional', 'Bahan Baku', 'Sewa', 'Casbon', 'Lain-lain']
+  const defaultIncomeJenisOptions = ['Pemasukan', 'Pemasukan Cafe', 'Pemasukan Carwash']
+  const defaultIncomeKategoriOptions = ['Omzet Penjualan', 'Modal Awal', 'Pemasukan Lain-lain']
   const posOptions = ['SALDO CASH', 'SALDO REKENING Y', 'SALDO REKENING N', 'SALDO REKENING R']
 
   // Custom Options State (from localStorage)
@@ -161,76 +163,97 @@ const Finance = () => {
 
   const saveCustomOption = (type, val) => {
     if (!val || typeof val !== 'string' || !val.trim()) return
-    const trimmed = val.trim()
     if (type === 'jenis') {
+      const norm = normalizeJenis(val)
+      if (!norm || defaultJenisOptions.some(d => d.toLowerCase() === norm.toLowerCase())) return
       setCustomJenisList(prev => {
-        if (prev.includes(trimmed) || defaultJenisOptions.includes(trimmed)) return prev
-        const updated = [...prev, trimmed]
+        if (prev.some(p => p.toLowerCase() === norm.toLowerCase())) return prev
+        const updated = [...prev, norm]
         try { localStorage.setItem('jb_custom_jenis_list', JSON.stringify(updated)) } catch {}
         return updated
       })
     } else if (type === 'kategori') {
+      const norm = normalizeCategory(val)
+      if (!norm || defaultKategoriOptions.some(d => d.toLowerCase() === norm.toLowerCase())) return
       setCustomKategoriList(prev => {
-        if (prev.includes(trimmed) || defaultKategoriOptions.includes(trimmed)) return prev
-        const updated = [...prev, trimmed]
+        if (prev.some(p => p.toLowerCase() === norm.toLowerCase())) return prev
+        const updated = [...prev, norm]
         try { localStorage.setItem('jb_custom_kategori_list', JSON.stringify(updated)) } catch {}
         return updated
       })
     } else if (type === 'income_jenis') {
+      const norm = normalizeJenis(val)
+      if (!norm || defaultIncomeJenisOptions.some(d => d.toLowerCase() === norm.toLowerCase())) return
       setCustomIncomeJenisList(prev => {
-        if (prev.includes(trimmed) || defaultIncomeJenisOptions.includes(trimmed)) return prev
-        const updated = [...prev, trimmed]
+        if (prev.some(p => p.toLowerCase() === norm.toLowerCase())) return prev
+        const updated = [...prev, norm]
         try { localStorage.setItem('jb_custom_income_jenis_list', JSON.stringify(updated)) } catch {}
         return updated
       })
     } else if (type === 'income_kategori') {
+      const norm = normalizeCategory(val)
+      if (!norm || defaultIncomeKategoriOptions.some(d => d.toLowerCase() === norm.toLowerCase())) return
       setCustomIncomeKategoriList(prev => {
-        if (prev.includes(trimmed) || defaultIncomeKategoriOptions.includes(trimmed)) return prev
-        const updated = [...prev, trimmed]
+        if (prev.some(p => p.toLowerCase() === norm.toLowerCase())) return prev
+        const updated = [...prev, norm]
         try { localStorage.setItem('jb_custom_income_kategori_list', JSON.stringify(updated)) } catch {}
         return updated
       })
     }
   }
 
-  // Combined options (Default + Custom localStorage + Supabase database records)
+  // Combined options (Standard choices + intentional custom choices, normalized with deduplication)
   const allJenisOptions = useMemo(() => {
-    const set = new Set([...defaultJenisOptions, ...customJenisList])
-    cashflowList.forEach(c => {
-      if (c.jenis && !isPindahSaldo(c)) set.add(c.jenis)
+    const map = new Map()
+    defaultJenisOptions.forEach(j => {
+      const norm = normalizeJenis(j)
+      if (norm) map.set(norm.toLowerCase(), norm)
     })
-    expensesList.forEach(e => {
-      if (e.jenis && !isPindahSaldo(e)) set.add(e.jenis)
+    customJenisList.forEach(j => {
+      const norm = normalizeJenis(j)
+      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
-    return Array.from(set).filter(Boolean)
-  }, [customJenisList, cashflowList, expensesList])
+    return Array.from(map.values())
+  }, [customJenisList])
 
   const allKategoriOptions = useMemo(() => {
-    const set = new Set([...defaultKategoriOptions, ...customKategoriList])
-    cashflowList.forEach(c => {
-      if (c.kategori && !isPindahSaldo(c)) set.add(c.kategori)
+    const map = new Map()
+    defaultKategoriOptions.forEach(k => {
+      const norm = normalizeCategory(k)
+      if (norm) map.set(norm.toLowerCase(), norm)
     })
-    expensesList.forEach(e => {
-      if (e.kategori && !isPindahSaldo(e)) set.add(e.kategori)
+    customKategoriList.forEach(k => {
+      const norm = normalizeCategory(k)
+      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
-    return Array.from(set).filter(Boolean)
-  }, [customKategoriList, cashflowList, expensesList])
+    return Array.from(map.values())
+  }, [customKategoriList])
 
   const allIncomeJenisOptions = useMemo(() => {
-    const set = new Set([...defaultIncomeJenisOptions, ...customIncomeJenisList])
-    cashflowList.forEach(c => {
-      if (c.jenis && parseFloat(c.pemasukan || 0) > 0 && !isPindahSaldo(c)) set.add(c.jenis)
+    const map = new Map()
+    defaultIncomeJenisOptions.forEach(j => {
+      const norm = normalizeJenis(j)
+      if (norm) map.set(norm.toLowerCase(), norm)
     })
-    return Array.from(set).filter(Boolean)
-  }, [customIncomeJenisList, cashflowList])
+    customIncomeJenisList.forEach(j => {
+      const norm = normalizeJenis(j)
+      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
+    })
+    return Array.from(map.values())
+  }, [customIncomeJenisList])
 
   const allIncomeKategoriOptions = useMemo(() => {
-    const set = new Set([...defaultIncomeKategoriOptions, ...customIncomeKategoriList])
-    cashflowList.forEach(c => {
-      if (c.kategori && parseFloat(c.pemasukan || 0) > 0 && !isPindahSaldo(c)) set.add(c.kategori)
+    const map = new Map()
+    defaultIncomeKategoriOptions.forEach(k => {
+      const norm = normalizeCategory(k)
+      if (norm) map.set(norm.toLowerCase(), norm)
     })
-    return Array.from(set).filter(Boolean)
-  }, [customIncomeKategoriList, cashflowList])
+    customIncomeKategoriList.forEach(k => {
+      const norm = normalizeCategory(k)
+      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
+    })
+    return Array.from(map.values())
+  }, [customIncomeKategoriList])
 
   // Backward compatibility alias
   const jenisOptions = allJenisOptions

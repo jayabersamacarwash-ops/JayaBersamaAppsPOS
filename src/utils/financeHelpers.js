@@ -1,11 +1,63 @@
 import { generateUUID } from './helpers'
 
+export const normalizeCategory = (cat) => {
+  if (!cat || typeof cat !== 'string') return ''
+  const trimmed = cat.trim()
+  if (!trimmed) return ''
+  const lower = trimmed.toLowerCase()
+
+  if (lower === 'operasional') return 'Operasional'
+  if (lower === 'bahan baku' || lower === 'bahan_baku') return 'Bahan Baku'
+  if (lower === 'sewa') return 'Sewa'
+  if (lower === 'casbon') return 'Casbon'
+  if (lower.startsWith('casbon -')) {
+    return 'Casbon - ' + trimmed.substring(8).trim()
+  }
+  if (lower === 'ambil uang paketan') return 'Ambil Uang Paketan'
+  if (lower === 'barang') return 'Barang'
+  if (lower === 'lain-lain' || lower === 'lain lain' || lower === 'lainnya') return 'Lain-lain'
+  if (lower === 'modal awal' || lower === 'modal') return 'Modal Awal'
+  if (lower === 'pemasukan lain-lain' || lower === 'pemasukan lain') return 'Pemasukan Lain-lain'
+  if (lower === 'omzet penjualan' || lower === 'omset' || lower === 'omzet' || lower === 'omset harian' || lower === 'omzet harian') return 'Omzet Penjualan'
+  if (lower === 'gaji karyawan' || lower === 'gaji') return 'Gaji Karyawan'
+
+  return trimmed
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+export const normalizeJenis = (jenis) => {
+  if (!jenis || typeof jenis !== 'string') return ''
+  const trimmed = jenis.trim()
+  if (!trimmed) return ''
+  const lower = trimmed.toLowerCase()
+
+  if (lower === 'pengeluaran cafe' || lower === 'cafe') return 'Pengeluaran Cafe'
+  if (lower === 'pengeluaran carwash' || lower === 'carwash') return 'Pengeluaran Carwash'
+  if (lower === 'pengeluaran bersama' || lower === 'bersama') return 'Pengeluaran Bersama'
+  if (lower === 'pengeluaran') return 'Pengeluaran'
+  if (lower === 'operasional') return 'Operasional'
+  if (lower === 'casbon') return 'Casbon'
+  if (lower === 'pemasukan') return 'Pemasukan'
+  if (lower === 'pemasukan cafe') return 'Pemasukan Cafe'
+  if (lower === 'pemasukan carwash') return 'Pemasukan Carwash'
+  if (lower === 'pemasukan lain-lain' || lower === 'pemasukan lain') return 'Pemasukan Lain-lain'
+  if (lower === 'pindah' || lower === 'pindah saldo' || lower === 'transfer') return 'Pindah'
+
+  return trimmed
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 export const validateExpenseForm = (form, barangMasukList) => {
   const totalVal = parseFloat(form.total_harga)
   if (isNaN(totalVal) || totalVal <= 0) {
     return { isValid: false, error: 'Total harga pengeluaran harus lebih besar dari 0.' }
   }
-  if (form.kategori === 'Bahan Baku' && (!barangMasukList || barangMasukList.length === 0)) {
+  const normKat = normalizeCategory(form.kategori)
+  if (normKat === 'Bahan Baku' && (!barangMasukList || barangMasukList.length === 0)) {
     return { isValid: false, error: 'Daftar barang masuk/restok wajib diisi untuk kategori Bahan Baku.' }
   }
   return { isValid: true }
@@ -20,7 +72,9 @@ export const formatExpensePayload = ({
   timestamp
 }) => {
   const totalVal = parseFloat(form.total_harga)
-  const isBahanBaku = form.kategori === 'Bahan Baku' && barangMasukList && barangMasukList.length > 0
+  const normKat = normalizeCategory(form.kategori || 'Operasional')
+  const normJenis = normalizeJenis(form.jenis || 'Pengeluaran')
+  const isBahanBaku = normKat === 'Bahan Baku' && barangMasukList && barangMasukList.length > 0
   const txDate = form.tanggal || todayDate
 
   const cashflow = {
@@ -28,8 +82,8 @@ export const formatExpensePayload = ({
     id_sumber: null,
     tanggal: txDate,
     keterangan_transaksi: form.keterangan,
-    jenis: form.jenis,
-    kategori: form.kategori,
+    jenis: normJenis,
+    kategori: normKat,
     pemasukan: 0,
     pengeluaran: totalVal,
     pos: form.pos,
@@ -75,8 +129,8 @@ export const formatIncomePayload = ({ form, newCfId, todayDate, timestamp }) => 
     id_sumber: null,
     tanggal: form.tanggal || todayDate,
     keterangan_transaksi: form.keterangan,
-    jenis: form.jenis || 'Pemasukan',
-    kategori: form.kategori || 'Pemasukan Lain-lain',
+    jenis: normalizeJenis(form.jenis || 'Pemasukan'),
+    kategori: normalizeCategory(form.kategori || 'Pemasukan Lain-lain'),
     pemasukan: nominalVal,
     pengeluaran: 0,
     pos: form.pos,
@@ -86,7 +140,8 @@ export const formatIncomePayload = ({ form, newCfId, todayDate, timestamp }) => 
 
 export const validatePosExpenseForm = (form) => {
   const nominalVal = parseFloat(form.nominal)
-  if (['Casbon', 'Ambil Uang Paketan'].includes(form.kategori) && (!form.karyawan || !form.karyawan.trim())) {
+  const normKat = normalizeCategory(form.kategori)
+  if (['Casbon', 'Ambil Uang Paketan'].includes(normKat) && (!form.karyawan || !form.karyawan.trim())) {
     return { isValid: false, error: 'Pilih karyawan penerima terlebih dahulu.' }
   }
   if (!form.keterangan || !form.keterangan.trim()) {
@@ -100,18 +155,20 @@ export const validatePosExpenseForm = (form) => {
 
 export const formatPosExpensePayload = ({ form, todayDate, currentTime, newExpId }) => {
   const nominalVal = parseFloat(form.nominal)
-  const isCasbon = form.kategori === 'Casbon'
-  const isPaketan = form.kategori === 'Ambil Uang Paketan'
+  const normKat = normalizeCategory(form.kategori || 'Operasional')
+  const isCasbon = normKat === 'Casbon'
+  const isPaketan = normKat === 'Ambil Uang Paketan'
   const isEmployeeRelated = isCasbon || isPaketan
+  const jenisVal = isCasbon ? 'Casbon' : (isPaketan ? 'Ambil Uang Paketan' : normalizeJenis(form.jenis || `Pengeluaran ${form.unit || 'Cafe'}`))
   
   return {
     id_pengeluaran: newExpId,
     tanggal: form.tanggal || todayDate,
     jam: form.jam || currentTime,
-    jenis: isCasbon ? 'Casbon' : (isPaketan ? 'Ambil Uang Paketan' : (form.jenis || `pengeluaran ${form.unit}`)),
-    kategori: isEmployeeRelated ? `${form.kategori} - ${form.karyawan}` : form.kategori,
+    jenis: jenisVal,
+    kategori: isEmployeeRelated ? `${normKat} - ${form.karyawan}` : normKat,
     nominal: nominalVal,
-    nama_pengeluaran: isEmployeeRelated ? `${form.kategori} ${form.karyawan} (${form.keterangan || 'Tanpa catatan'})` : form.keterangan,
+    nama_pengeluaran: isEmployeeRelated ? `${normKat} ${form.karyawan} (${form.keterangan || 'Tanpa catatan'})` : form.keterangan,
     apakah_stok: 'Tidak',
     id_bahan_baku: '',
     qty: 0
