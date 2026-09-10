@@ -1,15 +1,18 @@
 // API Adapter: Menjembatani request frontend ke Supabase atau Cloudflare Worker API
-// Pengaturan penyedia backend dapat diatur melalui environment variable:
-// VITE_BACKEND_PROVIDER = 'supabase' | 'cloudflare'
+// Otomatis mendeteksi domain Cloudflare Pages atau variabel VITE_BACKEND_PROVIDER
 
 import { supabase } from '../supabaseClient'
 
 export const BACKEND_PROVIDER = import.meta.env.VITE_BACKEND_PROVIDER || 'supabase'
-export const isCloudflare = BACKEND_PROVIDER === 'cloudflare'
+export const isCloudflare =
+  BACKEND_PROVIDER === 'cloudflare' ||
+  (typeof window !== 'undefined' &&
+    (window.location.hostname.includes('pages.dev') ||
+      window.location.hostname.includes('workers.dev')))
 
 // Helper fetch API Cloudflare Worker
-async function fetchCF(endpoint, options = {}) {
-  const token = localStorage.getItem('jb_cf_auth_token')
+export async function fetchCF(endpoint, options = {}) {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('jb_cf_auth_token') : null
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -42,14 +45,14 @@ export const api = {
         if (data.token) {
           localStorage.setItem('jb_cf_auth_token', data.token)
         }
-        return { user: data.user, profile: data.profile }
+        return { success: true, user: data.user, profile: data.profile }
       } else {
         const email = emailOrUsername.includes('@')
           ? emailOrUsername.trim()
           : `${emailOrUsername.trim().toLowerCase()}@jb.local`
         const { data, error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
-        return { user: data.user }
+        return { success: true, user: data.user }
       }
     },
 
@@ -62,6 +65,13 @@ export const api = {
       }
     },
 
+    async getMe() {
+      if (isCloudflare) {
+        return await fetchCF('auth/me')
+      }
+      return null
+    },
+
     async getProfile(userId) {
       if (isCloudflare) {
         const data = await fetchCF('auth/me')
@@ -71,6 +81,16 @@ export const api = {
         if (error) throw error
         return data
       }
+    },
+
+    async registerKasir(emailOrUsername, password, nama, role = 'Kasir') {
+      if (isCloudflare) {
+        return await fetchCF('auth/register-kasir', {
+          method: 'POST',
+          body: JSON.stringify({ emailOrUsername, password, nama, role }),
+        })
+      }
+      return null
     },
   },
 
@@ -128,7 +148,6 @@ export const api = {
           body: JSON.stringify(payload),
         })
       } else {
-        // Fallback standard insert Supabase
         const { data, error } = await supabase.from('struk').insert(payload).select()
         if (error) throw error
         return data

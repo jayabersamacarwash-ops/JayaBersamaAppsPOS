@@ -16,17 +16,17 @@ function jsonResponse(data, status = 200) {
   })
 }
 
-// Helper hashing password dengan Web Crypto API (SHA-256 + Salt)
+// Helper hashing password dengan Web Crypto API (PBKDF2 SHA-256 + Salt)
 async function hashPassword(password, salt) {
   const enc = new TextEncoder()
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    enc.encode(password + salt),
+    enc.encode(password),
     { name: 'PBKDF2' },
     false,
-    ['deriveBits', 'deriveKey']
+    ['deriveBits']
   )
-  const key = await crypto.subtle.deriveKey(
+  const bits = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
       salt: enc.encode(salt),
@@ -34,12 +34,9 @@ async function hashPassword(password, salt) {
       hash: 'SHA-256',
     },
     keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    true,
-    ['encrypt', 'decrypt']
+    256
   )
-  const rawKey = await crypto.subtle.exportKey('raw', key)
-  return Array.from(new Uint8Array(rawKey))
+  return Array.from(new Uint8Array(bits))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
 }
@@ -105,7 +102,7 @@ async function authenticate(request, env) {
   const authHeader = request.headers.get('Authorization') || ''
   if (!authHeader.startsWith('Bearer ')) return null
   const token = authHeader.substring(7)
-  return await verifyJWT(token, env.JWT_SECRET)
+  return await verifyJWT(token, env.JWT_SECRET || 'jb-super-secret-jwt-key-2026-secure-pos')
 }
 
 // ==================== MAIN ROUTER ====================
@@ -136,8 +133,14 @@ export async function onRequest(context) {
   try {
     // ---------------- AUTH ROUTES ----------------
     if (path === 'auth/login' && method === 'POST') {
-      const { emailOrUsername, password } = await request.json()
-      const email = emailOrUsername.includes('@') ? emailOrUsername.trim() : `${emailOrUsername.trim().toLowerCase()}@jb.local`
+      const body = await request.json()
+      const input = (body.emailOrUsername || body.email || body.username || '').trim()
+      const password = body.password || ''
+      if (!input || !password) {
+        return jsonResponse({ error: 'Username/Email dan password wajib diisi.' }, 400)
+      }
+
+      const email = input.includes('@') ? input : `${input.toLowerCase()}@jb.local`
       
       const user = await db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first()
       if (!user) {
@@ -150,7 +153,8 @@ export async function onRequest(context) {
       }
 
       const profile = await db.prepare('SELECT * FROM profiles WHERE id = ?').bind(user.id).first()
-      const token = await signJWT({ id: user.id, email: user.email, role: user.role, nama: profile?.nama || '' }, env.JWT_SECRET)
+      const secret = env.JWT_SECRET || 'jb-super-secret-jwt-key-2026-secure-pos'
+      const token = await signJWT({ id: user.id, email: user.email, role: user.role, nama: profile?.nama || '' }, secret)
 
       return jsonResponse({
         token,
