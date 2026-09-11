@@ -400,15 +400,7 @@ export async function onRequest(context) {
         const cashflowId = crypto.randomUUID()
         const batchStatements = []
 
-        // Simpan pengeluaran
-        batchStatements.push(
-          db.prepare(`
-            INSERT INTO pengeluaran (id_pengeluaran, id_cashflow, tanggal, jam, nama_pengeluaran, jenis, kategori, nominal, apakah_stok, id_bahan_baku, qty)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).bind(id_pengeluaran, cashflowId, body.tanggal, body.jam, body.nama_pengeluaran, body.jenis, body.kategori, body.nominal, body.apakah_stok || 'Tidak', body.id_bahan_baku || null, body.qty || 0)
-        )
-
-        // Sinkronisasi otomatis ke cashflow
+        // 1. Sinkronisasi otomatis ke cashflow terlebih dahulu (agar id_cashflow valid untuk foreign key)
         batchStatements.push(
           db.prepare(`
             INSERT INTO cashflow (id_cashflow, id_sumber, tanggal, keterangan_transaksi, jenis, kategori, pemasukan, pengeluaran, pos)
@@ -416,7 +408,15 @@ export async function onRequest(context) {
           `).bind(cashflowId, id_pengeluaran, body.tanggal, `Pengeluaran ${body.jenis} (${body.kategori}): ${body.nama_pengeluaran || 'Tanpa detail'}`, body.jenis, body.kategori, body.nominal)
         )
 
-        // Jika merupakan pembelian stok, update barang masuk & tambah stok
+        // 2. Simpan pengeluaran
+        batchStatements.push(
+          db.prepare(`
+            INSERT INTO pengeluaran (id_pengeluaran, id_cashflow, tanggal, jam, nama_pengeluaran, jenis, kategori, nominal, apakah_stok, id_bahan_baku, qty)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(id_pengeluaran, cashflowId, body.tanggal, body.jam, body.nama_pengeluaran, body.jenis, body.kategori, body.nominal, body.apakah_stok || 'Tidak', body.id_bahan_baku || null, body.qty || 0)
+        )
+
+        // 3. Jika merupakan pembelian stok, update barang masuk & tambah stok
         if (body.apakah_stok === 'Ya' && body.id_bahan_baku) {
           const idMasuk = crypto.randomUUID()
           batchStatements.push(
