@@ -16,7 +16,9 @@ import {
   Menu,
   X,
   Users,
-  Database
+  Database,
+  FileText,
+  UserCheck
 } from 'lucide-react'
 
 const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
@@ -27,53 +29,90 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const [showMobileNav, setShowMobileNav] = useState(false)
   const isOwner = profile?.role === 'Owner'
 
-  const menuItems = [
+  const navSections = [
     {
-      name: 'Dashboard',
-      path: '/',
-      icon: LayoutDashboard,
-      ownerOnly: true
+      title: 'UTAMA',
+      items: [
+        {
+          name: 'Dashboard',
+          path: '/',
+          icon: LayoutDashboard,
+          ownerOnly: true
+        }
+      ]
     },
     {
-      name: 'Kasir POS',
-      path: '/pos',
-      icon: ShoppingCart,
-      ownerOnly: false
+      title: 'OPERASIONAL & CRM',
+      items: [
+        {
+          name: 'Kasir POS',
+          path: '/pos',
+          icon: ShoppingCart,
+          ownerOnly: false
+        },
+        {
+          name: 'Antrean Carwash',
+          path: '/queue',
+          icon: Car,
+          ownerOnly: false
+        },
+        {
+          name: 'Pelanggan & CRM',
+          path: '/crm',
+          icon: UserCheck,
+          ownerOnly: true
+        }
+      ]
     },
     {
-      name: 'Antrean Carwash',
-      path: '/queue',
-      icon: Car,
-      ownerOnly: false
+      title: 'KEUANGAN & AKUNTANSI',
+      items: [
+        {
+          name: 'Buku Kas Keuangan',
+          path: '/finance',
+          icon: DollarSign,
+          ownerOnly: true
+        },
+        {
+          name: 'Laporan Akuntansi',
+          path: '/reports',
+          icon: FileText,
+          ownerOnly: true
+        }
+      ]
     },
     {
-      name: 'Keuangan',
-      path: '/finance',
-      icon: DollarSign,
-      ownerOnly: true
+      title: 'LOGISTIK & SDM',
+      items: [
+        {
+          name: 'Karyawan & Komisi',
+          path: '/karyawan',
+          icon: Users,
+          ownerOnly: true
+        },
+        {
+          name: 'Database Master',
+          path: '/database',
+          icon: Database,
+          ownerOnly: true
+        }
+      ]
     },
     {
-      name: 'Karyawan',
-      path: '/karyawan',
-      icon: Users,
-      ownerOnly: true
-    },
-    {
-      name: 'Database',
-      path: '/database',
-      icon: Database,
-      ownerOnly: true
-    },
-    {
-      name: 'Kelola Admin',
-      path: '/admin',
-      icon: Settings,
-      ownerOnly: true
+      title: 'SISTEM',
+      items: [
+        {
+          name: 'Kelola Admin',
+          path: '/admin',
+          icon: Settings,
+          ownerOnly: true
+        }
+      ]
     }
   ]
 
-  const activeClass = 'bg-brand-emerald/15 text-brand-emerald border-r-4 border-brand-emerald font-bold shadow-[inset_0_2px_20px_rgba(16,185,129,0.15)] animate-pulse-glow'
-  const inactiveClass = 'text-slate-400 hover:bg-slate-800/60 hover:text-white hover:-translate-y-0.5'
+  const activeClass = 'bg-brand-emerald/15 text-brand-emerald border-r-2 border-brand-emerald font-bold shadow-[inset_0_1px_12px_rgba(16,185,129,0.15)]'
+  const inactiveClass = 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
 
   return (
     <>
@@ -132,27 +171,35 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
 
         {/* Mobile Nav Dropdown Popover */}
         {showMobileNav && (
-          <div className="absolute top-18 right-4 w-56 glass-panel border border-slate-800 rounded-2xl p-2 shadow-2xl z-40 animate-pop-in flex flex-col gap-1">
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest px-3 py-2 mb-1 border-b border-slate-800">Menu Navigasi</p>
-            {menuItems.map((item) => {
-              if (item.ownerOnly && !isOwner) return null
-              const Icon = item.icon
-              const isActive = location.pathname === item.path
+          <div className="absolute top-18 right-4 w-60 glass-panel border border-slate-800 rounded-2xl p-3 shadow-2xl z-40 animate-pop-in flex flex-col gap-2 max-h-[80vh] overflow-y-auto">
+            {navSections.map((section, sIdx) => {
+              const visibleItems = section.items.filter(item => !item.ownerOnly || isOwner)
+              if (visibleItems.length === 0) return null
 
               return (
-                <Link
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setShowMobileNav(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all active:scale-95 ${
-                    isActive 
-                      ? 'bg-brand-emerald/15 text-brand-emerald font-bold' 
-                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                  }`}
-                >
-                  <Icon size={16} className={isActive ? 'drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]' : ''} />
-                  <span>{item.name}</span>
-                </Link>
+                <div key={section.title || sIdx} className="space-y-1">
+                  <p className="text-[9px] text-slate-500 font-black uppercase tracking-wider px-2 pt-1">{section.title}</p>
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon
+                    const isActive = location.pathname === item.path
+
+                    return (
+                      <Link
+                        key={item.name}
+                        to={item.path}
+                        onClick={() => setShowMobileNav(false)}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all active:scale-95 ${
+                          isActive 
+                            ? 'bg-brand-emerald/15 text-brand-emerald font-bold' 
+                            : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon size={15} className={isActive ? 'drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]' : ''} />
+                        <span>{item.name}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
               )
             })}
             <div className="h-[1px] w-full bg-slate-800/60 my-1"></div>
@@ -161,10 +208,10 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                 setShowMobileNav(false)
                 logout()
               }}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-rose-400 hover:bg-rose-500/10 transition-colors w-full text-left"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 transition-colors w-full text-left font-bold"
             >
-              <LogOut size={16} />
-              <span className="font-medium">Keluar Aplikasi</span>
+              <LogOut size={15} />
+              <span>Keluar Aplikasi</span>
             </button>
           </div>
         )}
@@ -202,13 +249,13 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       {/* Sidebar untuk Desktop */}
       <aside className={`hidden md:flex flex-col ${isCollapsed ? 'w-20' : 'w-64'} h-screen fixed left-0 top-0 glass-panel border-r border-slate-800 text-white z-30 animate-fade-in transition-all duration-300`}>
         {/* Logo/Header */}
-        <div className={`p-4 border-b border-slate-800/60 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} gap-3 relative`}>
+        <div className={`p-4 border-b border-slate-800/60 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} gap-3 relative shrink-0`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-800 shrink-0 shadow-inner group">
               <img 
                 src={currentTheme.logo} 
                 alt="Logo Jaya Bersama" 
-                className="w-full h-full object-cover scale-110 transition-all duration-500 group-hover:scale-125 group-hover:rotate-6"
+                className="w-full h-full object-cover scale-110 transition-all duration-500 group-hover:scale-125 group-hover:rotate-6" 
               />
             </div>
             {!isCollapsed && (
@@ -232,7 +279,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
         </div>
 
         {/* Info Profil */}
-        <div className={`p-3 ${isCollapsed ? 'mx-2 justify-center' : 'mx-4'} my-4 rounded-xl glass-card flex items-center gap-3 animate-slide-up delay-100`}>
+        <div className={`p-3 ${isCollapsed ? 'mx-2 justify-center' : 'mx-4'} my-3 rounded-xl glass-card flex items-center gap-3 shrink-0`}>
           <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 shrink-0 shadow-inner">
             <User size={18} />
           </div>
@@ -248,75 +295,83 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
           )}
         </div>
 
-        {/* Menu Navigasi */}
-        <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto pt-2">
-          {menuItems.map((item, index) => {
-            if (item.ownerOnly && !isOwner) return null
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
+        {/* Menu Navigasi Grouped */}
+        <nav className="flex-1 px-3 space-y-4 overflow-y-auto pt-1">
+          {navSections.map((section, sIdx) => {
+            const visibleItems = section.items.filter(item => !item.ownerOnly || isOwner)
+            if (visibleItems.length === 0) return null
 
             return (
-              <Link
-                key={item.name}
-                to={item.path}
-                className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} py-3 rounded-xl text-sm transition-all duration-300 animate-slide-up active:scale-95 ${
-                  isActive ? activeClass : inactiveClass
-                }`}
-                style={{ animationDelay: `${(index + 2) * 100}ms` }}
-                title={isCollapsed ? item.name : ''}
-              >
-                <Icon size={18} className={isActive ? "drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]" : ""} />
-                {!isCollapsed && <span className="animate-fade-in">{item.name}</span>}
-              </Link>
+              <div key={section.title || sIdx} className="space-y-1">
+                {!isCollapsed ? (
+                  <div className="px-3 py-1 text-[10px] font-black tracking-wider text-slate-500 uppercase flex items-center justify-between">
+                    <span>{section.title}</span>
+                  </div>
+                ) : (
+                  <div className="h-[1px] bg-slate-800/80 my-2 mx-2"></div>
+                )}
+
+                {visibleItems.map((item) => {
+                  const Icon = item.icon
+                  const isActive = location.pathname === item.path
+
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.path}
+                      className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3.5'} py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 active:scale-95 ${
+                        isActive ? activeClass : inactiveClass
+                      }`}
+                      title={isCollapsed ? item.name : ''}
+                    >
+                      <Icon size={16} className={isActive ? "drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]" : ""} />
+                      {!isCollapsed && <span className="truncate">{item.name}</span>}
+                    </Link>
+                  )
+                })}
+              </div>
             )
           })}
         </nav>
 
         {/* Theme/Logo Switcher */}
         {!isCollapsed && (
-          <div className="p-4 mx-4 mb-4 rounded-xl border border-slate-800/40 bg-slate-900/40 animate-fade-in">
-            <div className="flex items-center gap-2 mb-3">
-              <Palette size={14} className="text-brand-emerald" />
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Desain Logo & Tema</p>
+          <div className="p-3 mx-3 mb-2 rounded-xl border border-slate-800/40 bg-slate-900/40 shrink-0">
+            <div className="flex items-center gap-2 mb-2">
+              <Palette size={13} className="text-brand-emerald" />
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Logo & Tema</p>
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-1.5">
               {Object.values(themes).map((t) => (
                 <button
                   key={t.id}
                   onClick={() => changeTheme(t.id)}
                   className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all active:scale-95 group ${
                     activeThemeId === t.id 
-                      ? 'border-brand-emerald shadow-lg shadow-brand-emerald/25 scale-105' 
-                      : 'border-slate-800 opacity-55 hover:opacity-100 hover:border-slate-700'
+                      ? 'border-brand-emerald shadow-md scale-105' 
+                      : 'border-slate-800 opacity-50 hover:opacity-100 hover:border-slate-700'
                   }`}
                   title={t.name}
                 >
                   <img src={t.logo} alt={t.name} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <span className="text-[8px] text-white font-bold uppercase">Pilih</span>
-                  </div>
                 </button>
               ))}
             </div>
-            <p className="text-[9px] text-slate-500 mt-2 text-center font-medium truncate">
-              {currentTheme.name}
-            </p>
           </div>
         )}
 
         {/* Tombol Logout */}
-        <div className="p-4 border-t border-slate-800/60">
+        <div className="p-3 border-t border-slate-800/60 shrink-0">
           <button
             onClick={logout}
-            className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} w-full py-3 rounded-lg text-sm text-rose-400 hover:bg-rose-500/10 transition-colors`}
+            className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3.5'} w-full py-2.5 rounded-lg text-xs font-bold text-rose-400 hover:bg-rose-500/10 transition-colors`}
             title={isCollapsed ? 'Keluar Aplikasi' : ''}
           >
-            <LogOut size={18} />
-            {!isCollapsed && <span className="animate-fade-in">Keluar Aplikasi</span>}
+            <LogOut size={16} />
+            {!isCollapsed && <span>Keluar Aplikasi</span>}
           </button>
         </div>
       </aside>
-
     </>
   )
 }

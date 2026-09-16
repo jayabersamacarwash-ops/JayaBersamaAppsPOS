@@ -12,6 +12,8 @@ const Finance = lazy(() => import('./pages/Finance'))
 const Admin = lazy(() => import('./pages/Admin'))
 const Karyawan = lazy(() => import('./pages/Karyawan'))
 const Database = lazy(() => import('./pages/Database'))
+const Reports = lazy(() => import('./pages/Reports'))
+const CRM = lazy(() => import('./pages/CRM'))
 
 const PageLoader = () => (
   <div className="min-h-[70vh] flex flex-col items-center justify-center text-slate-400">
@@ -119,6 +121,26 @@ const AppContent = () => {
                 element={
                   <ProtectedRoute ownerOnly={true}>
                     <Finance />
+                  </ProtectedRoute>
+                } 
+              />
+
+              {/* Rute Laporan Akuntansi Resmi (Owner Only) */}
+              <Route 
+                path="/reports" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <Reports />
+                  </ProtectedRoute>
+                } 
+              />
+
+              {/* Rute CRM & Pelanggan (Owner Only) */}
+              <Route 
+                path="/crm" 
+                element={
+                  <ProtectedRoute ownerOnly={true}>
+                    <CRM />
                   </ProtectedRoute>
                 } 
               />

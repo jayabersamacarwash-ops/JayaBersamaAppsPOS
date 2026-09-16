@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -16,8 +16,14 @@ import {
   History,
   ChevronRight,
   ChevronUp,
+  ChevronDown,
   TrendingDown,
-  RefreshCw
+  RefreshCw,
+  Calendar,
+  Boxes,
+  Package,
+  Info,
+  AlertTriangle
 } from 'lucide-react'
 
 import {
@@ -29,6 +35,7 @@ import {
 } from '../utils/helpers'
 import { addToCart as cartAdd, updateQty as cartUpdate, removeFromCart as cartRemove } from '../utils/cartHelpers'
 import { validatePosExpenseForm, formatPosExpensePayload } from '../utils/financeHelpers'
+import realSeedData from '../services/realSeedData.json'
 
 const getMenuPhoto = (menuName) => {
   const name = String(menuName).toLowerCase()
@@ -71,6 +78,64 @@ const getMenuPhoto = (menuName) => {
   return 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&auto=format&fit=crop&q=60'
 }
 
+const getMenuTheme = (menuName) => {
+  const name = String(menuName || '').toLowerCase()
+  if (name.includes('americano') || name.includes('espresso') || name.includes('sanger') || name.includes('kopi') || name.includes('late')) {
+    return {
+      gradient: 'from-amber-700/40 via-amber-900/30 to-slate-950',
+      badgeBg: 'bg-amber-500/25 text-amber-300 border border-amber-500/30',
+      tag: 'Kopi',
+      emoji: '☕'
+    }
+  }
+  if (name.includes('teh') || name.includes('tea')) {
+    return {
+      gradient: 'from-emerald-700/40 via-teal-900/30 to-slate-950',
+      badgeBg: 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/30',
+      tag: 'Teh Segar',
+      emoji: '🍵'
+    }
+  }
+  if (name.includes('badak') || name.includes('susu') || name.includes('mineral') || name.includes('air')) {
+    return {
+      gradient: 'from-cyan-700/40 via-blue-900/30 to-slate-950',
+      badgeBg: 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/30',
+      tag: 'Minuman Dingin',
+      emoji: '🥤'
+    }
+  }
+  if (name.includes('ayam') || name.includes('penyet') || name.includes('geprek')) {
+    return {
+      gradient: 'from-rose-700/40 via-red-900/30 to-slate-950',
+      badgeBg: 'bg-rose-500/25 text-rose-300 border border-rose-500/30',
+      tag: 'Ayam & Lauk',
+      emoji: '🍗'
+    }
+  }
+  if (name.includes('nasi')) {
+    return {
+      gradient: 'from-orange-700/40 via-amber-900/30 to-slate-950',
+      badgeBg: 'bg-orange-500/25 text-orange-300 border border-orange-500/30',
+      tag: 'Nasi Goreng',
+      emoji: '🍚'
+    }
+  }
+  if (name.includes('mie') || name.includes('indomie')) {
+    return {
+      gradient: 'from-yellow-700/40 via-amber-900/30 to-slate-950',
+      badgeBg: 'bg-yellow-500/25 text-yellow-300 border border-yellow-500/30',
+      tag: 'Indomie',
+      emoji: '🍜'
+    }
+  }
+  return {
+    gradient: 'from-purple-700/40 via-indigo-900/30 to-slate-950',
+    badgeBg: 'bg-purple-500/25 text-purple-300 border border-purple-500/30',
+    tag: 'Camilan',
+    emoji: '🍟'
+  }
+}
+
 const CafePOS = () => {
   const { profile } = useAuth()
   const [activeTab, setActiveTab] = useState('cafe') // 'cafe' or 'carwash'
@@ -78,15 +143,21 @@ const CafePOS = () => {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
-  // Master Data dari DB
-  const [cashiers, setCashiers] = useState([])
-  const [paymentMethods, setPaymentMethods] = useState([])
-  const [menuItems, setMenuItems] = useState([])
-  const [resepList, setResepList] = useState([])
+  // Master Data awal langsung terisi dari realSeedData (Zero Blank Screen / Instant Render)
+  const [cashiers, setCashiers] = useState(() => (realSeedData.kasir || []).filter(k => k.is_active))
+  const [paymentMethods, setPaymentMethods] = useState(() => (realSeedData.metode_bayar || []).filter(p => p.is_active))
+  const [menuItems, setMenuItems] = useState(() => (realSeedData.daftar_harga_menu || []).map(m => ({ ...m, nama_menu: m.daftar_menu })))
+  const [resepList, setResepList] = useState(() => realSeedData.resep || [])
 
   // Form State
-  const [selectedCashier, setSelectedCashier] = useState('')
-  const [selectedPayment, setSelectedPayment] = useState('')
+  const [selectedCashier, setSelectedCashier] = useState(() => {
+    const active = (realSeedData.kasir || []).filter(k => k.is_active)
+    return active.length > 0 ? (active[0].nama || '').toUpperCase() : ''
+  })
+  const [selectedPayment, setSelectedPayment] = useState(() => {
+    const active = (realSeedData.metode_bayar || []).filter(p => p.is_active)
+    return active.length > 0 ? active[0].nama : 'CASH'
+  })
   const [paymentStatus, setPaymentStatus] = useState('Pending') // 'Pending' or 'Selesai'
 
   // Modal Hari Ini (Starting Capital)
@@ -109,6 +180,21 @@ const CafePOS = () => {
   const [todayTransactions, setTodayTransactions] = useState([])
   const [settlePaymentMethod, setSettlePaymentMethod] = useState('')
   const [settleCashReceived, setSettleCashReceived] = useState('')
+
+  // Search & Filter States for Pending Bills & Transaction History
+  const [pendingSearchQuery, setPendingSearchQuery] = useState('')
+  const [historySearchQuery, setHistorySearchQuery] = useState('')
+  const [historyDate, setHistoryDate] = useState(() => new Date().toLocaleDateString('en-CA'))
+
+  // Inventory (Stok Gudang) states for Cashier Monitoring
+  const [inventoryList, setInventoryList] = useState([])
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventorySearchQuery, setInventorySearchQuery] = useState('')
+  const [inventoryFilter, setInventoryFilter] = useState('ALL') // 'ALL' | 'SAFE' | 'LOW' | 'CRITICAL'
+
+  // Cash Drawer popover state
+  const [showCashDrawerDetail, setShowCashDrawerDetail] = useState(false)
+  const [showCashOpsMenu, setShowCashOpsMenu] = useState(false)
 
   // Split Payment states
   const [splitCashAmount, setSplitCashAmount] = useState('')
@@ -169,8 +255,10 @@ const CafePOS = () => {
     nominal: '',
     unit: 'Cafe',
     kategori: 'Operasional',
-    karyawan: ''
+    karyawan: '',
+    category_id: ''
   })
+  const [cashierAllowedCategories, setCashierAllowedCategories] = useState([])
   const [isCustomPosExpenseKat, setIsCustomPosExpenseKat] = useState(false)
   const [todayExpenses, setTodayExpenses] = useState([])
   const [editingExpenseId, setEditingExpenseId] = useState(null)
@@ -215,7 +303,7 @@ const CafePOS = () => {
 
   const loadMasterData = async () => {
     try {
-      const [dbCashiers, dbPayments, dbMenu, dbResep, dbDiskon] = await Promise.all([
+      const results = await Promise.allSettled([
         supabase.from('kasir').select('*').eq('is_active', true),
         supabase.from('metode_bayar').select('*').eq('is_active', true),
         supabase.from('daftar_harga_menu').select('*'),
@@ -223,23 +311,30 @@ const CafePOS = () => {
         supabase.from('diskon').select('*').order('created_at', { ascending: false })
       ])
 
-      const defaultCashiers = dbCashiers.data || []
-      const defaultPayments = dbPayments.data || []
-      const defaultMenus = dbMenu.data
+      const dbCashiers = results[0].status === 'fulfilled' ? results[0].value : { data: [] }
+      const dbPayments = results[1].status === 'fulfilled' ? results[1].value : { data: [] }
+      const dbMenu = results[2].status === 'fulfilled' ? results[2].value : { data: [] }
+      const dbResep = results[3].status === 'fulfilled' ? results[3].value : { data: [] }
+      const dbDiskon = results[4].status === 'fulfilled' ? results[4].value : { data: [] }
+
+      const defaultCashiers = dbCashiers.data && dbCashiers.data.length > 0 ? dbCashiers.data : null
+      const defaultPayments = dbPayments.data && dbPayments.data.length > 0 ? dbPayments.data : null
+      const defaultMenus = dbMenu.data && dbMenu.data.length > 0
         ? dbMenu.data.map(m => ({ ...m, nama_menu: m.daftar_menu }))
-        : []
-      const defaultResep = dbResep.data || []
-      const defaultDiskon = dbDiskon.data || []
+        : null
+      const defaultResep = dbResep.data && dbResep.data.length > 0 ? dbResep.data : null
+      const defaultDiskon = dbDiskon.data && dbDiskon.data.length > 0 ? dbDiskon.data : null
 
-      if (!defaultPayments.some(p => p.nama === 'SPLIT')) {
-        defaultPayments.push({ nama: 'SPLIT', is_active: true })
+      if (defaultCashiers) setCashiers(defaultCashiers)
+      if (defaultPayments) {
+        if (!defaultPayments.some(p => p.nama === 'SPLIT')) {
+          defaultPayments.push({ nama: 'SPLIT', is_active: true })
+        }
+        setPaymentMethods(defaultPayments)
       }
-
-      setCashiers(defaultCashiers)
-      setPaymentMethods(defaultPayments)
-      setMenuItems(defaultMenus)
-      setResepList(defaultResep)
-      setDiscounts(defaultDiskon)
+      if (defaultMenus) setMenuItems(defaultMenus)
+      if (defaultResep) setResepList(defaultResep)
+      if (defaultDiskon) setDiscounts(defaultDiskon)
 
       // Fetch dynamic washing employees from karyawan_cuci
       try {
@@ -272,6 +367,7 @@ const CafePOS = () => {
       await fetchCashierCash()
       await fetchTodayTransactions()
       await fetchTodayExpenses()
+      await fetchInventory()
 
     } catch (err) {
       console.error('Error loading master data:', err)
@@ -330,9 +426,8 @@ const CafePOS = () => {
     }
   }
 
-  const fetchTodayTransactions = async () => {
+  const fetchTodayTransactions = async (targetDate = historyDate) => {
     try {
-      const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
       const { data, error } = await supabase
         .from('struk')
         .select(`
@@ -344,10 +439,12 @@ const CafePOS = () => {
           metode_bayar,
           status_bayar,
           nama_pelanggan,
+          nominal_cash,
+          nominal_qris,
           cafe (nama_menu, qty, harga_satuan),
           carwash (paket, plat, harga, model)
         `)
-        .eq('tanggal', todayDate)
+        .eq('tanggal', targetDate)
         .order('jam', { ascending: false })
 
       if (error) throw error
@@ -355,12 +452,15 @@ const CafePOS = () => {
       if (data) {
         const formatted = data.map(item => ({
           id: item.id_struk,
+          tanggal: item.tanggal,
           jam: item.jam,
           kasir: item.kasir,
           total_harga: item.total_tagihan,
           metode_bayar: item.metode_bayar,
           status_bayar: item.status_bayar,
           nama_pelanggan: item.nama_pelanggan,
+          nominal_cash: item.nominal_cash,
+          nominal_qris: item.nominal_qris,
           cafe: (item.cafe || []).map(c => ({
             nama_menu: c.nama_menu,
             jumlah: c.qty,
@@ -382,6 +482,91 @@ const CafePOS = () => {
     }
   }
 
+  useEffect(() => {
+    fetchTodayTransactions(historyDate)
+  }, [historyDate])
+
+  const filteredPendingBills = useMemo(() => {
+    if (!pendingSearchQuery.trim()) return pendingBills
+    const q = pendingSearchQuery.toLowerCase().trim()
+    return pendingBills.filter((bill) => {
+      const matchId = (bill.id || '').toLowerCase().includes(q)
+      const matchKasir = (bill.kasir || '').toLowerCase().includes(q)
+      const matchDate = (bill.tanggal || '').toLowerCase().includes(q)
+      const matchCafe = bill.cafe?.some((c) => (c.nama_menu || '').toLowerCase().includes(q))
+      const matchCw = bill.carwash?.some(
+        (cw) =>
+          (cw.plat_nomor || '').toLowerCase().includes(q) ||
+          (cw.paket || '').toLowerCase().includes(q) ||
+          (cw.merk_mobil || '').toLowerCase().includes(q)
+      )
+      return matchId || matchKasir || matchDate || matchCafe || matchCw
+    })
+  }, [pendingBills, pendingSearchQuery])
+
+  const filteredTodayTransactions = useMemo(() => {
+    if (!historySearchQuery.trim()) return todayTransactions
+    const q = historySearchQuery.toLowerCase().trim()
+    return todayTransactions.filter((tx) => {
+      const matchId = (tx.id || '').toLowerCase().includes(q)
+      const matchKasir = (tx.kasir || '').toLowerCase().includes(q)
+      const matchCust = (tx.nama_pelanggan || '').toLowerCase().includes(q)
+      const matchMethod = (tx.metode_bayar || '').toLowerCase().includes(q)
+      const matchStatus = (tx.status_bayar || '').toLowerCase().includes(q)
+      const matchCafe = tx.cafe?.some((c) => (c.nama_menu || '').toLowerCase().includes(q))
+      const matchCw = tx.carwash?.some(
+        (cw) =>
+          (cw.plat_nomor || '').toLowerCase().includes(q) ||
+          (cw.paket || '').toLowerCase().includes(q) ||
+          (cw.merk_mobil || '').toLowerCase().includes(q)
+      )
+      return matchId || matchKasir || matchCust || matchMethod || matchStatus || matchCafe || matchCw
+    })
+  }, [todayTransactions, historySearchQuery])
+
+  const fetchInventory = async () => {
+    try {
+      setInventoryLoading(true)
+      const { data, error } = await supabase
+        .from('stok_barang')
+        .select('*')
+        .order('nama_produk', { ascending: true })
+
+      if (error) throw error
+      setInventoryList(data || [])
+    } catch (err) {
+      console.error('Error fetching inventory stock:', err)
+    } finally {
+      setInventoryLoading(false)
+    }
+  }
+
+  const filteredInventory = useMemo(() => {
+    return inventoryList.filter((item) => {
+      const stokVal = Number(item.stok) || 0
+      if (inventoryFilter === 'SAFE' && stokVal <= 10) return false
+      if (inventoryFilter === 'LOW' && (stokVal <= 0 || stokVal > 10)) return false
+      if (inventoryFilter === 'CRITICAL' && stokVal > 0) return false
+
+      if (!inventorySearchQuery.trim()) return true
+      const q = inventorySearchQuery.toLowerCase().trim()
+      const matchName = (item.nama_produk || '').toLowerCase().includes(q)
+      const matchCode = (item.id_bahan_baku || '').toLowerCase().includes(q)
+      const matchSatuan = (item.satuan || '').toLowerCase().includes(q)
+      return matchName || matchCode || matchSatuan
+    })
+  }, [inventoryList, inventorySearchQuery, inventoryFilter])
+
+  useEffect(() => {
+    if (activeTab === 'pending') {
+      fetchPendingBills()
+    } else if (activeTab === 'history') {
+      fetchTodayTransactions(historyDate)
+    } else if (activeTab === 'inventory') {
+      fetchInventory()
+    }
+  }, [activeTab])
+
   const fetchTodayExpenses = async () => {
     try {
       const todayDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
@@ -393,6 +578,16 @@ const CafePOS = () => {
 
       if (error) throw error
       setTodayExpenses(data || [])
+
+      // Fetch kategori yang diizinkan untuk kasir
+      const { data: allowedCats } = await supabase
+        .from('master_categories')
+        .select('*')
+        .eq('boleh_kasir', true)
+
+      if (allowedCats && allowedCats.length > 0) {
+        setCashierAllowedCategories(allowedCats)
+      }
     } catch (err) {
       console.error('Error fetching today expenses:', err)
     }
@@ -817,21 +1012,24 @@ const CafePOS = () => {
           kasir,
           total_tagihan,
           metode_bayar,
+          created_at,
           cafe (nama_menu, qty, harga_satuan),
-          carwash (paket, plat, harga)
+          carwash (paket, plat, harga, model)
         `)
         .eq('status_bayar', 'Pending')
-        .order('created_at', { ascending: false })
+        .order('tanggal', { ascending: false })
 
       if (error) throw error
 
       if (data) {
         const formatted = data.map(item => ({
           id: item.id_struk,
-          created_at: `${item.tanggal}T${item.jam || '00:00:00'}`,
-          kasir: item.kasir,
-          total_harga: item.total_tagihan,
-          metode_bayar: item.metode_bayar,
+          tanggal: item.tanggal,
+          jam: item.jam,
+          created_at: item.created_at || `${item.tanggal}T${item.jam || '00:00:00'}`,
+          kasir: item.kasir || 'Kasir',
+          total_harga: item.total_tagihan || 0,
+          metode_bayar: item.metode_bayar || 'CASH',
           cafe: (item.cafe || []).map(c => ({
             nama_menu: c.nama_menu,
             jumlah: c.qty,
@@ -840,7 +1038,8 @@ const CafePOS = () => {
           carwash: (item.carwash || []).map(cw => ({
             paket: cw.paket,
             plat_nomor: cw.plat,
-            harga: cw.harga
+            harga: cw.harga,
+            merk_mobil: cw.model
           }))
         }))
         setPendingBills(formatted)
@@ -1555,235 +1754,373 @@ const CafePOS = () => {
   }
 
   // Filter menu
-  const filteredMenus = menuItems.filter(item =>
+  const filteredMenus = (menuItems || []).filter(item =>
+    item &&
     item.kategori !== 'Carwash' &&
-    item.nama_menu.toLowerCase().includes(searchQuery.toLowerCase())
+    (item.nama_menu || item.daftar_menu || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   )
 
+  const isOrderTab = activeTab === 'cafe' || activeTab === 'carwash'
 
   return (
-    <div className="p-3 md:p-4 md:pb-6 grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 max-w-7xl mx-auto h-[calc(100dvh-4rem)] md:h-[calc(100vh-2rem)] w-full">
-      {/* Kolom Kiri & Tengah: Pilihan Item (2/3 lebar di desktop) */}
-      <div className="lg:col-span-2 flex flex-col h-full space-y-4 min-w-0">
-        {/* Header Tab & Informasi Kasir */}
-        <div className="glass-panel p-4 md:p-5 rounded-xl flex flex-col gap-5 shrink-0 min-w-0">
-
-          {/* Bagian Atas: Navigasi Tabs */}
-          <div className="flex gap-2 overflow-x-auto whitespace-nowrap md:flex-wrap md:whitespace-normal scrollbar-none w-full pb-1 shrink-0">
+    <div className="p-3 md:p-4 md:pb-6 flex flex-col max-w-7xl mx-auto min-h-[calc(100vh-4rem)] w-full space-y-3">
+      {/* 1. TOP HEADER FULL-WIDTH (BEBAS DARI SCROLL SAMPING & TAMPIL 100% LEGA) */}
+      <div className="glass-panel px-3.5 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shrink-0 relative z-20">
+        {/* Sisi Kiri: Navigasi Tabs Lengkap Terbuka Tanpa Scroll Samping */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Grup 1: Penjualan / Transaksi Langsung */}
+          <div className="flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800/90">
             <button
               onClick={() => setActiveTab('cafe')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'cafe'
-                ? 'bg-brand-emerald text-slate-950 shadow-md shadow-brand-emerald/10'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                activeTab === 'cafe'
+                  ? 'bg-brand-emerald text-slate-950 shadow-sm shadow-brand-emerald/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <Coffee size={16} />
-              Menu Cafe
+              <Coffee size={14} />
+              <span>Cafe</span>
             </button>
             <button
               onClick={() => setActiveTab('carwash')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'carwash'
-                ? 'bg-brand-blue text-slate-950 shadow-md shadow-brand-blue/10'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                activeTab === 'carwash'
+                  ? 'bg-brand-blue text-slate-950 shadow-sm shadow-brand-blue/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <Car size={16} />
-              Cuci Mobil (Carwash)
+              <Car size={14} />
+              <span>Carwash</span>
             </button>
+          </div>
+
+          <span className="text-slate-700 font-mono hidden sm:inline px-0.5">|</span>
+
+          {/* Grup 2: Audit & Monitoring Lapangan */}
+          <div className="flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800/90">
             <button
               onClick={() => setActiveTab('pending')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'pending'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                activeTab === 'pending'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <ShoppingCart size={16} />
-              Tagihan Pending ({pendingBills.length})
+              <ShoppingCart size={13} />
+              <span>Bon Pending</span>
+              {pendingBills.length > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  activeTab === 'pending' ? 'bg-slate-950 text-amber-400' : 'bg-amber-500/20 text-amber-400'
+                }`}>
+                  {pendingBills.length}
+                </span>
+              )}
             </button>
+
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'history'
-                ? 'bg-purple-500 text-white shadow-md shadow-purple-500/10'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                activeTab === 'history'
+                  ? 'bg-purple-500 text-white shadow-sm shadow-purple-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <History size={16} />
-              Daftar Transaksi ({todayTransactions.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('expense')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'expense'
-                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/10'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-            >
-              <TrendingDown size={16} />
-              Catat Pengeluaran
-            </button>
-            <button
-              onClick={() => setActiveTab('exchange')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shrink-0 ${activeTab === 'exchange'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/10'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-            >
-              <RefreshCw size={16} />
-              Tukar Uang (Cash Out)
-            </button>
-            <button
-              onClick={handleTutupKasir}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white border border-rose-500/50 shrink-0`}
-            >
-              Tutup Kasir (End of Day)
-            </button>
-          </div>
-
-          {/* Bagian Tengah: Dropdown Kasir dll */}
-          <div className="flex gap-3 text-xs overflow-x-auto scrollbar-none w-full pb-1 shrink-0">
-            <div className="flex flex-col shrink-0">
-              <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Kasir aktif</span>
-              <select
-                value={selectedCashier}
-                onChange={(e) => setSelectedCashier(e.target.value)}
-                disabled={profile?.role === 'Kasir'}
-                className="bg-slate-800 text-slate-300 font-bold border border-slate-700 py-1.5 px-3 rounded-lg focus:outline-none focus:border-brand-emerald disabled:opacity-85"
-              >
-                {cashiers.map(c => (
-                  <option key={c.nama || c.id} value={c.nama}>{c.nama}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col shrink-0">
-              <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Shift Aktif</span>
-              <span className="bg-slate-800 text-brand-emerald font-bold border border-slate-700 py-1.5 px-3 rounded-lg text-center font-mono">
-                {getShiftForCashier(selectedCashier)}
+              <History size={13} />
+              <span>Riwayat</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                activeTab === 'history' ? 'bg-slate-950 text-purple-300' : 'bg-purple-500/20 text-purple-300'
+              }`}>
+                {todayTransactions.length}
               </span>
-            </div>
-            {paymentStatus === 'Selesai' && (
-              <div className="flex flex-col shrink-0">
-                <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Metode</span>
-                <select
-                  value={selectedPayment}
-                  onChange={(e) => setSelectedPayment(e.target.value)}
-                  className="bg-slate-800 text-slate-300 font-bold border border-slate-700 py-1.5 px-3 rounded-lg focus:outline-none focus:border-brand-emerald"
-                >
-                  {paymentMethods.map(p => (
-                    <option key={p.nama || p.id} value={p.nama}>{p.nama}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="flex flex-col shrink-0">
-              <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Status</span>
-              <select
-                value={paymentStatus}
-                onChange={(e) => setPaymentStatus(e.target.value)}
-                className="bg-slate-800 text-slate-300 font-bold border border-slate-700 py-1.5 px-3 rounded-lg focus:outline-none focus:border-brand-emerald"
-              >
-                <option value="Selesai">Selesai</option>
-                <option value="Pending">Pending</option>
-              </select>
-            </div>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('inventory')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                activeTab === 'inventory'
+                  ? 'bg-amber-600 text-white shadow-sm shadow-amber-600/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Boxes size={13} />
+              <span>Stok Gudang</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                activeTab === 'inventory' ? 'bg-slate-950 text-amber-300' : 'bg-amber-600/20 text-amber-300'
+              }`}>
+                {inventoryList.length}
+              </span>
+            </button>
           </div>
 
-          {/* Bagian Bawah: Informasi Uang Kasir (Auto-wrap) */}
-          <div className="flex flex-wrap gap-4 md:gap-6 items-center bg-slate-900/50 border border-slate-850 p-4 rounded-xl w-full">
+          <span className="text-slate-700 font-mono hidden sm:inline px-0.5">|</span>
 
-            <div className="flex items-center gap-3 text-purple-400 w-full sm:w-auto border-b sm:border-b-0 sm:border-r border-slate-800 pb-3 sm:pb-0 sm:pr-6">
-              <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
-                <Wallet size={18} />
-              </div>
-              <div>
-                <span className="block text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Laci Kasir (Cash)</span>
-                <span className="font-black text-white text-base leading-none">{formatRupiah(todayStartingCapital + cashierCash.todayIn - cashierCash.todayOut)}</span>
-              </div>
-            </div>
+          {/* Grup 3: Dropdown Operasional Kas & Shift */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowCashOpsMenu(!showCashOpsMenu)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all border ${
+                activeTab === 'expense' || activeTab === 'exchange'
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  : 'bg-slate-900/80 text-slate-300 hover:text-white border-slate-800 hover:border-slate-700'
+              }`}
+              title="Operasional Laci Kasir & Pergantian Shift"
+            >
+              <TrendingDown size={13} className="text-rose-400" />
+              <span>
+                {activeTab === 'expense' ? 'Pengeluaran' : activeTab === 'exchange' ? 'Tukar Uang' : 'Shift & Kas'}
+              </span>
+              <ChevronDown size={12} className={`transition-transform ${showCashOpsMenu ? 'rotate-180' : ''}`} />
+            </button>
 
-            <div className="flex flex-col flex-1 min-w-[100px]">
-              <span className="block text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Modal Awal</span>
-              <span className="text-slate-300 font-bold">{formatRupiah(todayStartingCapital)}</span>
-            </div>
+            {showCashOpsMenu && (
+              <>
+                <div className="fixed inset-0 z-20 bg-transparent" onClick={() => setShowCashOpsMenu(false)} />
+                <div className="absolute left-0 top-full mt-2 w-52 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-xl p-1.5 shadow-2xl z-30 space-y-1 animate-slide-up">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('expense'); setShowCashOpsMenu(false); }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-left transition-colors ${
+                      activeTab === 'expense' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <TrendingDown size={14} className="text-rose-400" />
+                    <span>Catat Pengeluaran Kas</span>
+                  </button>
 
-            <div className="flex flex-col flex-1 min-w-[100px]">
-              <span className="block text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Masuk Cash</span>
-              <span className="text-brand-emerald font-bold">+{formatRupiah(cashierCash.todayIn)}</span>
-            </div>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('exchange'); setShowCashOpsMenu(false); }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-left transition-colors ${
+                      activeTab === 'exchange' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <RefreshCw size={14} className="text-cyan-400" />
+                    <span>Tukar Uang / Tarik Kas</span>
+                  </button>
 
-            <div className="flex flex-col flex-1 min-w-[100px]">
-              <span className="block text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Keluar Cash</span>
-              <span className="text-rose-400 font-bold">-{formatRupiah(cashierCash.todayOut)}</span>
-            </div>
+                  <div className="border-t border-slate-800 my-1" />
 
-            <div className="flex flex-col flex-1 min-w-[100px]">
-              <span className="block text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Total QRIS</span>
-              <span className="text-cyan-400 font-black">{formatRupiah(cashierCash.todayQRIS)}</span>
-            </div>
-
+                  <button
+                    type="button"
+                    onClick={() => { setShowCashOpsMenu(false); handleTutupKasir(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-left text-rose-400 hover:bg-rose-500/20 transition-colors"
+                  >
+                    <AlertCircle size={14} />
+                    <span>Tutup Shift Kasir</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Tab 1: Menu Cafe */}
-        {activeTab === 'cafe' && (
-          <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-slate-900/40 border border-slate-800/80 rounded-xl p-4 overflow-hidden">
-            {/* Search Bar */}
-            <div className="relative mb-4 shrink-0 min-w-0">
-              <Search className="absolute left-3.5 top-3 text-slate-500" size={16} />
-              <input
-                type="text"
-                placeholder="Cari makanan, minuman, atau paket bundling..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-brand-emerald/60 text-sm"
-              />
-            </div>
+        {/* Sisi Kanan: Kasir Aktif & Status Laci Kas Ringkas */}
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+          {/* Status Kasir & Shift */}
+          <div className="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
+            <span className="w-2 h-2 rounded-full bg-brand-emerald animate-pulse"></span>
+            <span className="text-slate-500 text-[10px] font-semibold hidden sm:inline uppercase tracking-wider">Kasir:</span>
+            {profile?.role === 'Kasir' ? (
+              <span className="font-bold text-white uppercase text-xs">{selectedCashier}</span>
+            ) : (
+              <select
+                value={selectedCashier}
+                onChange={(e) => setSelectedCashier(e.target.value)}
+                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer uppercase"
+              >
+                {cashiers.map((c) => (
+                  <option key={c.nama || c.id} value={c.nama} className="bg-slate-900 text-white">
+                    {c.nama}
+                  </option>
+                ))}
+              </select>
+            )}
+            <span className="text-slate-700 font-mono">|</span>
+            <span className="text-brand-emerald font-bold font-mono text-[11px]">
+              {getShiftForCashier(selectedCashier)}
+            </span>
+          </div>
 
-            {/* Grid Item Menu (Scrollable) */}
-            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 pr-1 content-start">
-              {filteredMenus.map((menu, idx) => (
-                <button
-                  key={menu.nama_menu}
-                  onClick={() => addToCart({ nama_menu: menu.nama_menu, harga: menu.harga })}
-                  className="glass-card hover:border-brand-emerald/40 p-0 rounded-2xl flex flex-col justify-between text-left transition-all duration-300 active:scale-95 group overflow-hidden animate-pop-in hover:-translate-y-1 hover:shadow-[0_8px_20px_-10px_rgba(16,185,129,0.5)]"
-                  style={{ animationDelay: `${(idx % 15) * 50}ms` }}
-                >
-                  {/* Menu Image Area */}
-                  <div className="w-full h-28 relative overflow-hidden bg-slate-800">
-                    <img
-                      src={getMenuPhoto(menu.nama_menu)}
-                      alt={menu.nama_menu}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'flex';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/20 to-transparent"></div>
-                    <div className="absolute inset-0 hidden items-center justify-center text-slate-600 bg-slate-800/50 backdrop-blur-sm">
-                      <Coffee size={24} />
-                    </div>
-                    <span className={`absolute top-2 left-2 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase backdrop-blur-md ${menu.is_bundling
-                      ? 'bg-rose-500/80 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]'
-                      : 'bg-brand-emerald/80 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]'
-                      }`}>
-                      {menu.is_bundling ? 'Bundling' : menu.kategori}
+          {/* Pill Saldo Laci Kasir (Interactive Popover) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowCashDrawerDetail(!showCashDrawerDetail)}
+              className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-lg px-2.5 py-1 text-xs transition-colors"
+              title="Klik untuk melihat rincian modal & arus kas laci"
+            >
+              <Wallet size={13} className="text-purple-400" />
+              <span className="font-bold text-white font-mono text-xs">
+                {formatRupiah(todayStartingCapital + cashierCash.todayIn - cashierCash.todayOut)}
+              </span>
+              <ChevronDown size={12} className={`text-purple-400 transition-transform ${showCashDrawerDetail ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Popover Rincian Arus Kas */}
+            {showCashDrawerDetail && (
+              <>
+                <div
+                  className="fixed inset-0 z-20 bg-black/20 backdrop-blur-[0.5px]"
+                  onClick={() => setShowCashDrawerDetail(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-72 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-xl p-3.5 shadow-2xl z-30 space-y-2.5 animate-slide-up">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Wallet size={14} className="text-purple-400" />
+                      Rincian Uang Kasir
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowCashDrawerDetail(false)}
+                      className="text-slate-500 hover:text-white text-xs"
+                    >
+                      ✕
+                    </button>
                   </div>
-
-                  {/* Menu Details */}
-                  <div className="p-3 flex-1 flex flex-col justify-between bg-slate-900/60 backdrop-blur-xl relative w-full">
-                    <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-brand-emerald/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <h4 className="font-bold text-sm text-slate-100 group-hover:text-brand-emerald transition-colors line-clamp-2 drop-shadow-md">
-                      {menu.nama_menu}
-                    </h4>
-                    <div className="mt-3 flex justify-between items-center">
-                      <span className="text-xs font-bold text-emerald-400 drop-shadow-[0_0_2px_rgba(16,185,129,0.5)]">{formatRupiah(menu.harga)}</span>
-                      <span className="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-sm group-hover:bg-brand-emerald group-hover:text-slate-950 group-hover:shadow-[0_0_10px_rgba(16,185,129,0.6)] transition-all duration-300">
-                        <Plus size={14} />
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Modal Awal</span>
+                      <span className="font-mono text-slate-200 font-bold">{formatRupiah(todayStartingCapital)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Uang Masuk (Cash)</span>
+                      <span className="font-mono text-brand-emerald font-bold">+{formatRupiah(cashierCash.todayIn)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Uang Keluar (Cash)</span>
+                      <span className="font-mono text-rose-400 font-bold">-{formatRupiah(cashierCash.todayOut)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Total QRIS Masuk</span>
+                      <span className="font-mono text-cyan-400 font-bold">{formatRupiah(cashierCash.todayQRIS)}</span>
+                    </div>
+                    <div className="border-t border-slate-800 pt-1.5 flex justify-between items-center font-bold text-white">
+                      <span>Sisa Fisik di Laci</span>
+                      <span className="font-mono text-purple-300 font-black">
+                        {formatRupiah(todayStartingCapital + cashierCash.todayIn - cashierCash.todayOut)}
                       </span>
                     </div>
                   </div>
-                </button>
-              ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. AREA KERJA UTAMA: 2-KOLOM SAAT JUALAN, FULL-WIDTH SAAT AUDIT/MONITORING */}
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row items-start gap-4 md:gap-6 w-full">
+        {/* Kolom Kiri: Pilihan Item / Form / Tabel Audit */}
+        <div className={`${isOrderTab ? 'lg:w-2/3' : 'w-full'} flex flex-col flex-1 min-h-0 min-w-0`}>
+          {/* Tab 1: Menu Cafe */}
+          {activeTab === 'cafe' && (
+            <div className="flex-1 flex flex-col bg-slate-900/40 border border-slate-800/80 rounded-xl p-4 min-h-[500px]">
+              {/* Search Bar */}
+              <div className="relative mb-4 shrink-0 min-w-0">
+                <Search className="absolute left-3.5 top-3 text-slate-500" size={16} />
+                <input
+                  type="text"
+                  placeholder="Cari makanan, minuman, atau paket bundling..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-brand-emerald/60 text-sm"
+                />
+              </div>
+
+              {/* Grid Item Menu (Scrollable) */}
+              <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 pr-1 content-start min-h-[450px]">
+              {filteredMenus.map((menu, idx) => {
+                const theme = getMenuTheme(menu.nama_menu)
+                const inCartItem = cart.find(c => c.nama_menu === menu.nama_menu)
+                return (
+                  <button
+                    key={menu.nama_menu}
+                    type="button"
+                    onClick={() => addToCart({ nama_menu: menu.nama_menu, harga: menu.harga })}
+                    className={`glass-card hover:border-brand-emerald/50 p-0 rounded-2xl flex flex-col justify-between text-left transition-all duration-300 active:scale-95 group overflow-hidden h-[185px] relative shrink-0 ${
+                      inCartItem ? 'border-brand-emerald/60 ring-1 ring-brand-emerald/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-slate-800'
+                    }`}
+                  >
+                    {/* Visual Banner / Gambar Menu */}
+                    <div className={`w-full h-24 relative overflow-hidden bg-gradient-to-br ${theme.gradient} flex items-center justify-center`}>
+                      {/* Fallback Icon & Emoji saat gambar offline/error/loading */}
+                      <div className="fallback-placeholder absolute inset-0 flex items-center justify-center text-3xl drop-shadow-lg pointer-events-none transition-opacity">
+                        <span>{theme.emoji}</span>
+                      </div>
+
+                      {/* Foto Menu dengan graceful fallback */}
+                      <img
+                        src={getMenuPhoto(menu.nama_menu)}
+                        alt={menu.nama_menu}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 relative z-10"
+                        onLoad={(e) => {
+                          const placeholder = e.currentTarget.parentElement.querySelector('.fallback-placeholder');
+                          if (placeholder) placeholder.style.display = 'none';
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const placeholder = e.currentTarget.parentElement.querySelector('.fallback-placeholder');
+                          if (placeholder) placeholder.style.display = 'flex';
+                        }}
+                      />
+                      
+                      {/* Gradient Overlay di atas gambar */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent pointer-events-none z-20"></div>
+
+                      {/* Kategori Badge di sudut kiri atas */}
+                      <span className={`absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase backdrop-blur-md shadow-sm z-30 ${
+                        menu.is_bundling
+                          ? 'bg-rose-500/90 text-white'
+                          : theme.badgeBg
+                      }`}>
+                        {menu.is_bundling ? 'Bundling' : theme.tag}
+                      </span>
+
+                      {/* Counter Badge jika sudah ada di cart */}
+                      {inCartItem && (
+                        <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-brand-emerald text-slate-950 font-black text-xs flex items-center justify-center shadow-lg shadow-brand-emerald/30 animate-pop-in z-30">
+                          {inCartItem.qty}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Informasi Menu & Harga */}
+                    <div className="p-3 flex-1 flex flex-col justify-between bg-slate-950/80 backdrop-blur-md relative w-full">
+                      <h4 className="font-bold text-xs text-slate-100 group-hover:text-brand-emerald transition-colors line-clamp-2 leading-tight">
+                        {menu.nama_menu}
+                      </h4>
+                      <div className="mt-2 flex justify-between items-center">
+                        <span className="text-xs font-black text-emerald-400 font-mono">
+                          {formatRupiah(menu.harga)}
+                        </span>
+                        <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-xs group-hover:bg-brand-emerald group-hover:text-slate-950 transition-all">
+                          <Plus size={12} />
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+
+              {filteredMenus.length === 0 && (
+                <div className="col-span-full py-16 flex flex-col items-center justify-center text-center text-slate-500">
+                  <Coffee size={36} className="text-slate-600 mb-2 opacity-60" />
+                  <p className="text-sm font-semibold text-slate-400">
+                    {menuItems.length === 0 ? 'Memuat daftar menu cafe...' : 'Tidak ada menu yang sesuai pencarian'}
+                  </p>
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="mt-2 text-xs text-brand-emerald hover:underline font-medium"
+                    >
+                      Reset kata kunci pencarian
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2010,20 +2347,77 @@ const CafePOS = () => {
         {/* Tab 3: Tagihan Pending */}
         {activeTab === 'pending' && (
           <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-slate-900/40 border border-slate-800/80 rounded-xl p-6 overflow-y-auto space-y-4">
-            <div>
-              <h3 className="text-lg font-bold text-white">Daftar Tagihan Pending (Bon)</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Daftar struk transaksi yang belum dilunasi oleh pelanggan</p>
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>Daftar Tagihan Pending (Bon)</span>
+                  <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-black">
+                    {pendingBills.length} Bon
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Daftar struk transaksi yang belum dilunasi oleh pelanggan</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchPendingBills}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="Muat ulang tagihan pending"
+                >
+                  <RefreshCw size={13} />
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
 
-            {pendingBills.length === 0 ? (
+            {/* Search Bar Tagihan Pending */}
+            <div className="relative">
+              <Search className="absolute left-3.5 top-3 text-slate-500" size={15} />
+              <input
+                type="text"
+                placeholder="Cari nomor struk, nama kasir, plat nomor, menu cafe, atau paket cuci..."
+                value={pendingSearchQuery}
+                onChange={(e) => setPendingSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-xs transition-colors"
+              />
+              {pendingSearchQuery && (
+                <button
+                  onClick={() => setPendingSearchQuery('')}
+                  className="absolute right-3.5 top-2.5 text-slate-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {filteredPendingBills.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-12 text-slate-600">
-                <CheckCircle size={36} className="mb-2 text-brand-emerald/60" />
-                <p className="text-sm font-semibold">Semua tagihan bersih!</p>
-                <p className="text-xs text-slate-700 mt-0.5">Tidak ada bill gantung yang pending.</p>
+                {pendingBills.length === 0 ? (
+                  <>
+                    <CheckCircle size={36} className="mb-2 text-brand-emerald/60" />
+                    <p className="text-sm font-semibold">Semua tagihan bersih!</p>
+                    <p className="text-xs text-slate-700 mt-0.5">Tidak ada bill gantung yang pending.</p>
+                  </>
+                ) : (
+                  <>
+                    <Search size={36} className="mb-2 text-slate-600" />
+                    <p className="text-sm font-semibold text-slate-400">Pencarian Tidak Ditemukan</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Tidak ada tagihan pending yang cocok dengan "{pendingSearchQuery}"</p>
+                    <button
+                      onClick={() => setPendingSearchQuery('')}
+                      className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Reset Filter Pencarian
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
-                {pendingBills.map(bill => {
+                <div className="text-[11px] text-slate-400 font-medium">
+                  Menampilkan <span className="text-white font-bold">{filteredPendingBills.length}</span> dari {pendingBills.length} tagihan pending
+                </div>
+                {filteredPendingBills.map(bill => {
                   const dateStr = parseDateSafe(bill.created_at).toLocaleString('id-ID', {
                     dateStyle: 'medium',
                     timeStyle: 'short'
@@ -2040,6 +2434,9 @@ const CafePOS = () => {
                             Kasir: {bill.kasir}
                           </span>
                           <span className="text-[10px] text-slate-500">{dateStr}</span>
+                          <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-extrabold uppercase">
+                            PENDING
+                          </span>
                         </div>
 
                         {/* Bill Items Detail */}
@@ -2051,7 +2448,7 @@ const CafePOS = () => {
                           ))}
                           {bill.carwash?.map((item, idx) => (
                             <span key={idx} className="block text-[11px]">
-                              🧼 Carwash: {item.paket} ({item.plat_nomor || 'PLAT KOSONG'}) - ({formatRupiah(item.harga)})
+                              🧼 Carwash: {item.paket} {item.plat_nomor ? `(${item.merk_mobil ? item.merk_mobil + ' - ' : ''}${item.plat_nomor})` : ''} - ({formatRupiah(item.harga)})
                             </span>
                           ))}
                         </div>
@@ -2091,20 +2488,108 @@ const CafePOS = () => {
         {/* Tab 4: Riwayat/Daftar Transaksi Hari Ini */}
         {activeTab === 'history' && (
           <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-slate-900/40 border border-slate-800/80 rounded-xl p-6 overflow-y-auto space-y-4">
-            <div>
-              <h3 className="text-lg font-bold text-white">Daftar Transaksi Hari Ini</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Daftar seluruh transaksi (Pending & Selesai) yang tercatat hari ini</p>
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>Daftar Riwayat Transaksi</span>
+                  <span className="text-xs bg-brand-blue/20 text-brand-blue border border-brand-blue/30 px-2 py-0.5 rounded-full font-black">
+                    {todayTransactions.length} Transaksi
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Daftar seluruh transaksi kasir berdasarkan tanggal terpilih</p>
+              </div>
+
+              {/* Date Filter & Actions */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
+                  <Calendar size={13} className="text-slate-400" />
+                  <input
+                    type="date"
+                    value={historyDate}
+                    onChange={(e) => setHistoryDate(e.target.value)}
+                    className="bg-transparent text-white text-xs focus:outline-none cursor-pointer"
+                  />
+                </div>
+                <button
+                  onClick={() => setHistoryDate(new Date().toLocaleDateString('en-CA'))}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    historyDate === new Date().toLocaleDateString('en-CA')
+                      ? 'bg-brand-blue text-white'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  Hari Ini
+                </button>
+                <button
+                  onClick={() => fetchTodayTransactions(historyDate)}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all"
+                  title="Muat ulang riwayat"
+                >
+                  <RefreshCw size={13} />
+                </button>
+              </div>
             </div>
 
-            {todayTransactions.length === 0 ? (
+            {/* Search Bar Transaksi */}
+            <div className="relative">
+              <Search className="absolute left-3.5 top-3 text-slate-500" size={15} />
+              <input
+                type="text"
+                placeholder="Cari ID struk, kasir, nama pelanggan, metode (CASH/QRIS), plat mobil, menu..."
+                value={historySearchQuery}
+                onChange={(e) => setHistorySearchQuery(e.target.value)}
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-brand-blue text-xs transition-colors"
+              />
+              {historySearchQuery && (
+                <button
+                  onClick={() => setHistorySearchQuery('')}
+                  className="absolute right-3.5 top-2.5 text-slate-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {filteredTodayTransactions.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-12 text-slate-600">
-                <History size={36} className="mb-2 text-slate-700" />
-                <p className="text-sm font-semibold">Belum ada transaksi hari ini</p>
-                <p className="text-xs text-slate-700 mt-0.5">Selesaikan pesanan untuk memunculkan riwayat.</p>
+                {todayTransactions.length === 0 ? (
+                  <>
+                    <History size={36} className="mb-2 text-slate-700" />
+                    <p className="text-sm font-semibold">Belum ada transaksi pada tanggal ini</p>
+                    <p className="text-xs text-slate-700 mt-0.5">Pilih tanggal lain atau kembali ke transaksi hari ini.</p>
+                    <button
+                      onClick={() => setHistoryDate(new Date().toLocaleDateString('en-CA'))}
+                      className="mt-3 px-3 py-1.5 bg-brand-blue hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Pilih Hari Ini
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Search size={36} className="mb-2 text-slate-600" />
+                    <p className="text-sm font-semibold text-slate-400">Pencarian Tidak Ditemukan</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Tidak ada transaksi yang cocok dengan "{historySearchQuery}"</p>
+                    <button
+                      onClick={() => setHistorySearchQuery('')}
+                      className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Reset Filter Pencarian
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
-                {todayTransactions.map(tx => {
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                  <div>
+                    Menampilkan <span className="text-white font-bold">{filteredTodayTransactions.length}</span> dari {todayTransactions.length} transaksi ({historyDate})
+                  </div>
+                  <div className="text-brand-emerald font-bold font-mono">
+                    Total: {formatRupiah(filteredTodayTransactions.reduce((acc, t) => t.status_bayar === 'Selesai' ? acc + (t.total_harga || 0) : acc, 0))}
+                  </div>
+                </div>
+
+                {filteredTodayTransactions.map(tx => {
                   const isSelesai = tx.status_bayar === 'Selesai'
                   const isCash = tx.metode_bayar === 'CASH'
                   const merkWash = tx.carwash?.[0]?.merk_mobil
@@ -2137,7 +2622,7 @@ const CafePOS = () => {
                             {tx.metode_bayar}
                           </span>
                           {merkWash && (
-                            <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded uppercase ${isSelesai
+                            <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded uppercase ${isSelesai
                               ? 'bg-green-500/15 text-green-400'
                               : 'bg-red-500/15 text-red-400'
                               }`}>
@@ -2145,7 +2630,7 @@ const CafePOS = () => {
                             </span>
                           )}
                           {platWash && (
-                            <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded uppercase ${isSelesai
+                            <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded uppercase ${isSelesai
                               ? 'bg-green-500/15 text-green-400'
                               : 'bg-red-500/15 text-red-400'
                               }`}>
@@ -2163,7 +2648,7 @@ const CafePOS = () => {
                           ))}
                           {tx.carwash?.map((item, idx) => (
                             <span key={idx} className="block text-[11px]">
-                              🧼 Carwash: {item.paket} ({item.merk_mobil || 'MOBIL'} - {item.plat_nomor || 'PLAT KOSONG'}) - ({formatRupiah(item.harga)})
+                              🧼 Carwash: {item.paket} {item.plat_nomor ? `(${item.merk_mobil ? item.merk_mobil + ' - ' : ''}${item.plat_nomor})` : ''} - ({formatRupiah(item.harga)})
                             </span>
                           ))}
                         </div>
@@ -2233,6 +2718,260 @@ const CafePOS = () => {
           </div>
         )}
 
+        {/* Tab: Stok Gudang (Pemantauan Kasir / Stock Opname) */}
+        {activeTab === 'inventory' && (
+          <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-slate-900/40 border border-slate-800/80 rounded-xl p-6 overflow-y-auto space-y-5">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Boxes className="text-amber-500" size={20} />
+                  <span>Stok Gudang & Bahan Baku</span>
+                  <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-black">
+                    {inventoryList.length} Item
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Pemantauan sisa persediaan fisik untuk pencocokan lapangan (Stock Opname) oleh kasir
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchInventory}
+                  disabled={inventoryLoading}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  title="Muat ulang data stok gudang"
+                >
+                  <RefreshCw size={13} className={inventoryLoading ? 'animate-spin' : ''} />
+                  <span>Refresh Data</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Read-Only Notice Banner */}
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-start gap-3">
+              <Info className="text-amber-400 shrink-0 mt-0.5" size={18} />
+              <div className="text-xs text-amber-200/90 leading-relaxed">
+                <span className="font-bold text-amber-300">Mode Pemantauan Kasir (Hanya Pantau / Read-Only):</span>{' '}
+                Halaman ini khusus digunakan kasir untuk mencocokkan stok fisik di gudang dengan catatan sistem.
+                Penambahan stok masuk (restok), edit kuantitas, dan penyesuaian master bahan baku dikelola langsung oleh{' '}
+                <span className="font-semibold text-white">Owner/Admin</span> di halaman Kelola Admin.
+              </div>
+            </div>
+
+            {/* Mini Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="glass-card p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] text-slate-400 font-medium">Total Bahan Baku</p>
+                  <p className="text-lg font-black text-white mt-0.5">{inventoryList.length}</p>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400">
+                  <Package size={18} />
+                </div>
+              </div>
+
+              <div className="glass-card p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] text-emerald-400 font-medium">Stok Aman</p>
+                  <p className="text-lg font-black text-emerald-400 mt-0.5">
+                    {inventoryList.filter((i) => (Number(i.stok) || 0) > 10).length}
+                  </p>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <CheckCircle size={18} />
+                </div>
+              </div>
+
+              <div className="glass-card p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] text-amber-400 font-medium">Stok Menipis (1-10)</p>
+                  <p className="text-lg font-black text-amber-400 mt-0.5">
+                    {inventoryList.filter((i) => (Number(i.stok) || 0) > 0 && (Number(i.stok) || 0) <= 10).length}
+                  </p>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
+                  <AlertTriangle size={18} />
+                </div>
+              </div>
+
+              <div className="glass-card p-3.5 rounded-xl border border-rose-500/20 bg-rose-500/5 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] text-rose-400 font-medium">Habis / Kritis (≤ 0)</p>
+                  <p className="text-lg font-black text-rose-400 mt-0.5">
+                    {inventoryList.filter((i) => (Number(i.stok) || 0) <= 0).length}
+                  </p>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-rose-500/20 flex items-center justify-center text-rose-400">
+                  <AlertCircle size={18} />
+                </div>
+              </div>
+            </div>
+
+            {/* Search Bar & Filter Tabs */}
+            <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between">
+              {/* Search Bar */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-3 text-slate-500" size={15} />
+                <input
+                  type="text"
+                  placeholder="Cari nama bahan baku (kopi, gula, teh...), kode (BK-01), atau satuan..."
+                  value={inventorySearchQuery}
+                  onChange={(e) => setInventorySearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-xs transition-colors"
+                />
+                {inventorySearchQuery && (
+                  <button
+                    onClick={() => setInventorySearchQuery('')}
+                    className="absolute right-3.5 top-2.5 text-slate-500 hover:text-white text-xs font-bold p-1"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto shrink-0">
+                {[
+                  { id: 'ALL', label: 'Semua' },
+                  { id: 'SAFE', label: 'Aman' },
+                  { id: 'LOW', label: 'Menipis' },
+                  { id: 'CRITICAL', label: 'Kritis/Habis' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setInventoryFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      inventoryFilter === tab.id
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Inventory List / Table */}
+            {filteredInventory.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-slate-600">
+                <Search size={36} className="mb-2 text-slate-600" />
+                <p className="text-sm font-semibold text-slate-400">Tidak ada data bahan baku yang cocok</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {inventorySearchQuery
+                    ? `Tidak ditemukan hasil untuk "${inventorySearchQuery}"`
+                    : 'Belum ada data bahan baku tersimpan.'}
+                </p>
+                {(inventorySearchQuery || inventoryFilter !== 'ALL') && (
+                  <button
+                    onClick={() => {
+                      setInventorySearchQuery('')
+                      setInventoryFilter('ALL')
+                    }}
+                    className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-800/80">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/80 text-slate-400 border-b border-slate-800/80 font-bold uppercase tracking-wider text-[11px]">
+                      <th className="py-3 px-4 w-12 text-center">No</th>
+                      <th className="py-3 px-4">Kode</th>
+                      <th className="py-3 px-4">Nama Bahan Baku</th>
+                      <th className="py-3 px-4">Satuan</th>
+                      <th className="py-3 px-4 text-right">Sisa Stok Sistem</th>
+                      <th className="py-3 px-4 text-center">Status</th>
+                      <th className="py-3 px-4">Terakhir Diperbarui</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {filteredInventory.map((item, idx) => {
+                      const stokVal = Number(item.stok) || 0
+                      const isSafe = stokVal > 10
+                      const isLow = stokVal > 0 && stokVal <= 10
+                      const isCritical = stokVal <= 0
+
+                      const updatedTimeStr = item.updated_at
+                        ? parseDateSafe(item.updated_at).toLocaleString('id-ID', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })
+                        : '-'
+
+                      return (
+                        <tr
+                          key={item.id_bahan_baku || idx}
+                          className="hover:bg-slate-800/30 transition-colors"
+                        >
+                          <td className="py-3.5 px-4 text-center font-mono text-slate-500 text-[11px]">
+                            {idx + 1}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-mono text-xs font-bold bg-slate-800 text-amber-400 border border-slate-700/60 px-2 py-0.5 rounded">
+                              {item.id_bahan_baku}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-semibold text-white">
+                            {item.nama_produk}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-400 font-medium">
+                            {item.satuan || 'Pcs'}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono font-bold text-sm">
+                            <span
+                              className={
+                                isSafe
+                                  ? 'text-emerald-400'
+                                  : isLow
+                                  ? 'text-amber-400'
+                                  : 'text-rose-400'
+                              }
+                            >
+                              {stokVal.toLocaleString('id-ID')}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-normal ml-1">
+                              {item.satuan || ''}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            {isSafe && (
+                              <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase">
+                                <CheckCircle size={10} />
+                                Aman
+                              </span>
+                            )}
+                            {isLow && (
+                              <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase">
+                                <AlertTriangle size={10} />
+                                Menipis
+                              </span>
+                            )}
+                            {isCritical && (
+                              <span className="inline-flex items-center gap-1 bg-rose-500/15 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase">
+                                <AlertCircle size={10} />
+                                {stokVal < 0 ? 'Minus' : 'Habis'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                            {updatedTimeStr}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Tab 5: Catat Pengeluaran Kasir */}
         {activeTab === 'expense' && (
           <div className="glass-panel p-6 rounded-xl border border-slate-800 flex-1 flex flex-col min-h-0 overflow-y-auto space-y-6">
@@ -2293,19 +3032,32 @@ const CafePOS = () => {
                       onChange={(e) => {
                         if (e.target.value === '__CUSTOM__') {
                           setIsCustomPosExpenseKat(true)
-                          setPosExpenseForm(prev => ({ ...prev, kategori: '' }))
+                          setPosExpenseForm(prev => ({ ...prev, kategori: '', category_id: '' }))
                         } else {
-                          setPosExpenseForm(prev => ({ ...prev, kategori: e.target.value }))
+                          const selected = cashierAllowedCategories.find(c => c.nama_kategori === e.target.value)
+                          setPosExpenseForm(prev => ({ 
+                            ...prev, 
+                            kategori: e.target.value,
+                            category_id: selected ? selected.id : ''
+                          }))
                         }
                       }}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-emerald"
                     >
-                      <option value="Operasional">Operasional</option>
-                      <option value="Bahan Baku">Bahan Baku</option>
-                      <option value="Sewa">Sewa</option>
-                      <option value="Casbon">Casbon Karyawan</option>
-                      <option value="Ambil Uang Paketan">Ambil Uang Paketan</option>
-                      <option value="Lain-lain">Lain-lain</option>
+                      {cashierAllowedCategories.length > 0 ? (
+                        cashierAllowedCategories.map(c => (
+                          <option key={c.id} value={c.nama_kategori}>{c.nama_kategori}</option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="Operasional">Operasional</option>
+                          <option value="Bahan Baku">Bahan Baku</option>
+                          <option value="Sewa">Sewa</option>
+                          <option value="Casbon">Casbon Karyawan</option>
+                          <option value="Ambil Uang Paketan">Ambil Uang Paketan</option>
+                          <option value="Lain-lain">Lain-lain</option>
+                        </>
+                      )}
                       <option value="__CUSTOM__">✨ + Custom (Ketik Sendiri)...</option>
                     </select>
                   )}
@@ -2517,64 +3269,80 @@ const CafePOS = () => {
         )}
       </div>
 
-      {/* Kolom Kanan: Rincian Belanja & Checkout (1/3 lebar di desktop, tersembunyi di mobile) */}
-      <div className="hidden lg:flex glass-panel p-6 rounded-xl flex-col justify-between h-fit overflow-hidden border border-slate-800/80 min-w-0">
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex items-center gap-2 border-b border-slate-800 pb-4 mb-4 shrink-0">
-            <ShoppingCart className="text-brand-emerald" size={20} />
-            <h3 className="font-bold text-lg text-white">Struk Belanja</h3>
+      {/* Kolom Kanan: Rincian Belanja & Checkout (Hanya tampil saat tab jualan Cafe/Carwash) */}
+      {isOrderTab && (
+        <div className="hidden lg:flex lg:w-1/3 glass-panel p-5 rounded-xl flex-col h-fit border border-slate-800/80 min-w-0 shrink-0">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3 shrink-0">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="text-brand-emerald" size={20} />
+              <h3 className="font-bold text-base text-white">Struk Belanja</h3>
+            </div>
+            {cart.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setCart([])}
+                className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold hover:underline"
+              >
+                Kosongkan
+              </button>
+            )}
           </div>
 
           {/* Alert Popups */}
           {success && (
-            <div className="mb-4 p-4 rounded-xl bg-brand-emerald/10 border border-brand-emerald/20 text-brand-emerald text-xs flex items-center gap-3 shrink-0">
-              <CheckCircle size={16} />
+            <div className="mb-3 p-3 rounded-xl bg-brand-emerald/10 border border-brand-emerald/20 text-brand-emerald text-xs flex items-center gap-2 shrink-0">
+              <CheckCircle size={15} />
               <span>Transaksi berhasil disimpan!</span>
             </div>
           )}
 
           {error && (
-            <div className="mb-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-3 shrink-0">
-              <AlertCircle size={16} />
+            <div className="mb-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2 shrink-0">
+              <AlertCircle size={15} />
               <span>{error}</span>
             </div>
           )}
 
-          {/* List Cart Items (Scrollable) */}
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          {/* List Cart Items (Scrollable jika item banyak, tanpa paksaan tinggi palsu) */}
+          <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1 my-1">
             {cart.length === 0 && !hasCarwash && (
-              <div className="h-full flex flex-col items-center justify-center text-slate-600 text-xs py-12">
-                <ShoppingCart size={32} className="mb-2" />
-                <p>Belum ada produk terpilih.</p>
+              <div className="flex flex-col items-center justify-center text-slate-600 text-xs py-5">
+                <ShoppingCart size={28} className="mb-2 text-slate-700" />
+                <p className="font-semibold text-slate-400">Belum ada menu dipilih</p>
+                <p className="text-[11px] text-slate-600 mt-0.5">Klik menu di samping untuk menambahkan ke struk.</p>
               </div>
             )}
 
             {/* List Item Cafe */}
             {cart.map((item) => (
-              <div key={item.nama_menu} className="flex justify-between items-center p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/60">
+              <div key={item.nama_menu} className="flex justify-between items-center p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all shrink-0">
                 <div className="overflow-hidden mr-2">
                   <h5 className="font-bold text-xs text-white truncate">{item.nama_menu}</h5>
-                  <span className="text-[10px] text-slate-500">{formatRupiah(item.harga)}</span>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold">{formatRupiah(item.harga)}</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
+                    type="button"
                     onClick={() => updateQty(item.nama_menu, -1)}
-                    className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors"
+                    className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors font-bold text-xs"
                   >
-                    <Minus size={10} />
+                    <Minus size={11} />
                   </button>
-                  <span className="text-xs font-bold text-white w-4 text-center">{item.qty}</span>
+                  <span className="text-xs font-black text-white w-5 text-center font-mono">{item.qty}</span>
                   <button
+                    type="button"
                     onClick={() => updateQty(item.nama_menu, 1)}
-                    className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors"
+                    className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors font-bold text-xs"
                   >
-                    <Plus size={10} />
+                    <Plus size={11} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => removeFromCart(item.nama_menu)}
-                    className="text-rose-400 hover:text-rose-500 p-1 ml-1"
+                    className="text-rose-400 hover:text-rose-500 p-1 ml-1 transition-colors"
+                    title="Hapus dari pesanan"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
@@ -2605,7 +3373,6 @@ const CafePOS = () => {
               </div>
             )}
           </div>
-        </div>
 
         {/* Ringkasan & Checkout Button */}
         <div className="border-t border-slate-800 pt-4 mt-4 shrink-0 space-y-4">
@@ -2678,16 +3445,44 @@ const CafePOS = () => {
                  {diskonCafeNominal > 0 && (
                    <span className="text-[10px] text-brand-emerald font-semibold block">Potongan: -{formatRupiah(diskonCafeNominal)}</span>
                  )}
-               </div>
-             )}
+                 </div>
+                 )}
 
-             <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-slate-800/50">
-               <span>Total Bayar</span>
-               <span className="text-brand-emerald">{formatRupiah(grandTotal)}</span>
-             </div>
-           </div>
+                 <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-slate-800/50">
+                 <span>Total Bayar</span>
+                 <span className="text-brand-emerald">{formatRupiah(grandTotal)}</span>
+                 </div>
+                 </div>
 
-           {selectedPayment === 'SPLIT' && (
+                 {/* Pilihan Metode Bayar & Status Transaksi */}
+                 <div className="grid grid-cols-2 gap-2 p-3 bg-slate-900/80 rounded-xl border border-slate-800/80 my-1">
+                 <div>
+                 <label className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1">Metode Bayar</label>
+                 <select
+                 value={selectedPayment}
+                 onChange={(e) => setSelectedPayment(e.target.value)}
+                 className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-2 text-white text-xs font-bold focus:outline-none focus:border-brand-emerald"
+                 >
+                 {paymentMethods.map(p => (
+                   <option key={p.nama || p.id} value={p.nama}>{p.nama}</option>
+                 ))}
+                 <option value="SPLIT">SPLIT (Cash + QRIS)</option>
+                 </select>
+                 </div>
+                 <div>
+                 <label className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1">Status</label>
+                 <select
+                 value={paymentStatus}
+                 onChange={(e) => setPaymentStatus(e.target.value)}
+                 className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-2 text-white text-xs font-bold focus:outline-none focus:border-brand-emerald"
+                 >
+                 <option value="Selesai">Selesai (Lunas)</option>
+                 <option value="Pending">Pending (Bon)</option>
+                 </select>
+                 </div>
+                 </div>
+
+                 {selectedPayment === 'SPLIT' && (
              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-850 space-y-3 my-1">
                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block">Pembayaran Terpisah (Split)</span>
                <div className="space-y-1">
@@ -2779,14 +3574,16 @@ const CafePOS = () => {
            >
              {loading ? 'Memproses Transaksi...' : editingStrukId ? 'Simpan Perubahan' : `Simpan & Cetak (${paymentStatus})`}
            </button>
-         </div>
-       </div>
+           </div>
+           </div>
+           )}
+           </div>
 
-      {/* Floating Cart Bar for Mobile */}
+           {/* Floating Cart Bar for Mobile */}
       {(cart.length > 0 || hasCarwash) && !showMobileCart ? (
         <button
           onClick={() => setShowMobileCart(true)}
-          className="lg:hidden fixed bottom-18 left-4 right-4 z-40 bg-slate-900/95 backdrop-blur-md border border-brand-emerald/30 p-3.5 rounded-2xl flex items-center justify-between shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_15px_rgba(16,185,129,0.15)] animate-slide-up text-left group transition-transform active:scale-[0.98]"
+          className="lg:hidden fixed bottom-5 left-4 right-4 z-30 bg-slate-900/95 backdrop-blur-md border border-brand-emerald/30 p-3.5 rounded-2xl flex items-center justify-between shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_15px_rgba(16,185,129,0.15)] animate-slide-up text-left group transition-transform active:scale-[0.98]"
         >
           <div className="flex items-center gap-3 pointer-events-none">
             <div className="w-10 h-10 rounded-xl bg-brand-emerald/10 flex items-center justify-center text-brand-emerald relative">
@@ -2979,6 +3776,34 @@ const CafePOS = () => {
                 </div>
               </div>
 
+              {/* Pilihan Metode Bayar & Status Mobile */}
+              <div className="grid grid-cols-2 gap-2 p-3 bg-slate-950 rounded-xl border border-slate-850 my-1">
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1">Metode Bayar</label>
+                  <select
+                    value={selectedPayment}
+                    onChange={(e) => setSelectedPayment(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-2 text-white text-xs font-bold focus:outline-none focus:border-brand-emerald"
+                  >
+                    {paymentMethods.map(p => (
+                      <option key={p.nama || p.id} value={p.nama}>{p.nama}</option>
+                    ))}
+                    <option value="SPLIT">SPLIT (Cash + QRIS)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1">Status</label>
+                  <select
+                    value={paymentStatus}
+                    onChange={(e) => setPaymentStatus(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-2 text-white text-xs font-bold focus:outline-none focus:border-brand-emerald"
+                  >
+                    <option value="Selesai">Selesai (Lunas)</option>
+                    <option value="Pending">Pending (Bon)</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Input Uang Diterima & Kembalian Mobile */}
               {paymentStatus === 'Selesai' && (selectedPayment === 'CASH' || selectedPayment === 'SPLIT') && (
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-850 space-y-3 my-1">
@@ -3048,7 +3873,7 @@ const CafePOS = () => {
 
       {/* MODAL: Selesaikan Pembayaran Pending */}
       {settlingBill && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-fade-in">
           <div className="glass-panel w-full max-w-md p-6 rounded-2xl shadow-2xl border border-slate-700 shadow-[0_0_40px_rgba(16,185,129,0.15)] animate-pop-in">
             <div className="flex justify-between items-center border-b border-slate-800 pb-4 mb-4">
               <h3 className="text-lg font-bold text-white">
@@ -3189,7 +4014,7 @@ const CafePOS = () => {
 
       {/* MODAL: Input Modal Hari Ini */}
       {showModalModal && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-[70] animate-fade-in">
           <div className="glass-panel w-full max-w-md p-6 rounded-2xl shadow-2xl border border-slate-800 animate-pop-in">
             <div className="text-center mb-6">
               <div className="w-12 h-12 mx-auto rounded-xl bg-gradient-to-tr from-brand-emerald to-brand-blue flex items-center justify-center font-bold text-lg text-slate-900 shadow-md mb-3">

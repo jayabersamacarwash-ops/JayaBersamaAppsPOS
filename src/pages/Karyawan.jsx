@@ -10,9 +10,13 @@ import {
   Trash2, 
   CheckCircle, 
   AlertCircle,
-  Briefcase
+  Briefcase,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Printer
 } from 'lucide-react'
-import { formatRupiah } from '../utils/helpers'
+import { formatRupiah, sortWagesDetails, sortWithdrawalsList } from '../utils/helpers'
 import InteractiveCalendar from '../components/InteractiveCalendar'
 
 const Karyawan = () => {
@@ -65,6 +69,12 @@ const Karyawan = () => {
   const [showWagesCalendar, setShowWagesCalendar] = useState(false)
   const [selectedWageWorker, setSelectedWageWorker] = useState(null)
   const [selectedJobForCrosscheck, setSelectedJobForCrosscheck] = useState(null)
+
+  // Sorting states for Wages Detail History & Cashflow Withdrawals
+  const [detailSortField, setDetailSortField] = useState('tanggal')
+  const [detailSortDirection, setDetailSortDirection] = useState('asc') // 'asc' = terendah ke tertinggi (oldest first)
+  const [withdrawalSortField, setWithdrawalSortField] = useState('tanggal')
+  const [withdrawalSortDirection, setWithdrawalSortDirection] = useState('asc')
 
   // Staff registration form state
   const [staffForm, setStaffForm] = useState({
@@ -388,6 +398,62 @@ const Karyawan = () => {
   }, [carwashWagesList, cashflowList, pengeluaranList, karyawanCuciList])
 
   const selectedWorkerDetails = selectedWageWorker ? wagesSummary.find(w => w.name === selectedWageWorker) : null
+
+  // Toggle sorting for Job Details
+  const handleDetailSort = (field) => {
+    if (detailSortField === field) {
+      setDetailSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setDetailSortField(field)
+      setDetailSortDirection('asc')
+    }
+  }
+
+  // Toggle sorting for Withdrawals
+  const handleWithdrawalSort = (field) => {
+    if (withdrawalSortField === field) {
+      setWithdrawalSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setWithdrawalSortField(field)
+      setWithdrawalSortDirection('asc')
+    }
+  }
+
+  // Sorted job details list
+  const sortedWorkerDetailsList = useMemo(() => {
+    if (!selectedWorkerDetails?.details) return []
+    return sortWagesDetails(selectedWorkerDetails.details, detailSortField, detailSortDirection)
+  }, [selectedWorkerDetails, detailSortField, detailSortDirection])
+
+  // Sorted withdrawals list
+  const sortedWithdrawalsList = useMemo(() => {
+    if (!selectedWorkerDetails?.withdrawalsList) return []
+    return sortWithdrawalsList(selectedWorkerDetails.withdrawalsList, withdrawalSortField, withdrawalSortDirection)
+  }, [selectedWorkerDetails, withdrawalSortField, withdrawalSortDirection])
+
+  // Handler Cetak PDF (Otomatis sort tanggal terendah ke tertinggi)
+  const handlePrintPDF = () => {
+    setDetailSortField('tanggal')
+    setDetailSortDirection('asc')
+    setWithdrawalSortField('tanggal')
+    setWithdrawalSortDirection('asc')
+
+    setTimeout(() => {
+      window.print()
+    }, 100)
+  }
+
+  // Ensure browser print shortcuts (Ctrl+P) also sort by ascending date
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      setDetailSortField('tanggal')
+      setDetailSortDirection('asc')
+      setWithdrawalSortField('tanggal')
+      setWithdrawalSortDirection('asc')
+    }
+    window.addEventListener('beforeprint', handleBeforePrint)
+    return () => window.removeEventListener('beforeprint', handleBeforePrint)
+  }, [])
 
   const handleOpenPayModal = () => {
     setPayForm({
@@ -722,10 +788,12 @@ const Karyawan = () => {
                         Bayar Gaji
                       </button>
                       <button 
-                        onClick={() => window.print()}
-                        className="px-3 py-1.5 bg-brand-blue hover:bg-cyan-500 text-slate-950 text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center gap-1.5"
+                        onClick={handlePrintPDF}
+                        title="Cetak PDF Laporan Gaji (Otomatis urut dari tanggal terendah)"
+                        className="px-3 py-1.5 bg-brand-blue hover:bg-cyan-500 text-slate-950 text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center gap-1.5 shadow-sm"
                       >
-                        Cetak PDF
+                        <Printer size={14} className="shrink-0" />
+                        <span>Cetak PDF</span>
                       </button>
                       <button 
                         onClick={() => setSelectedWageWorker(null)}
@@ -764,30 +832,124 @@ const Karyawan = () => {
 
                   {/* Job List Title */}
                   <div className="space-y-2">
-                    <h5 className="text-xs font-bold text-slate-450 uppercase tracking-wider">1. Rincian Pekerjaan Cuci</h5>
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-bold text-slate-450 uppercase tracking-wider">1. Rincian Pekerjaan Cuci</h5>
+                      <span className="text-[10px] text-slate-500 italic print:hidden">* Klik header kolom untuk mengurutkan data</span>
+                    </div>
                     {/* Full Table of History details */}
                     <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/40">
                       <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                         <thead>
-                          <tr className="border-b border-slate-800 text-slate-500 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50">
-                            <th className="p-4">Tanggal & Waktu</th>
-                            <th className="p-4">Plat Nomor</th>
-                            <th className="p-4">Paket Cuci</th>
-                            <th className="p-4">Varian & Ukuran</th>
-                            <th className="p-4">Porsi Cuci</th>
-                            <th className="p-4 text-right">Total Transaksi</th>
-                            <th className="p-4 text-right">Bagian Upah</th>
+                          <tr className="border-b border-slate-800 text-slate-400 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50 select-none">
+                            <th 
+                              onClick={() => handleDetailSort('tanggal')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Tanggal & Waktu"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Tanggal & Waktu</span>
+                                {detailSortField === 'tanggal' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleDetailSort('platNomor')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Plat Nomor"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Plat Nomor</span>
+                                {detailSortField === 'platNomor' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleDetailSort('paket')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Paket Cuci"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Paket Cuci</span>
+                                {detailSortField === 'paket' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleDetailSort('variant')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Varian & Ukuran"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Varian & Ukuran</span>
+                                {detailSortField === 'variant' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleDetailSort('split')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Porsi Cuci"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Porsi Cuci</span>
+                                {detailSortField === 'split' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleDetailSort('totalHarga')}
+                              className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Total Transaksi"
+                            >
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span>Total Transaksi</span>
+                                {detailSortField === 'totalHarga' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleDetailSort('shareWage')}
+                              className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Bagian Upah"
+                            >
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span>Bagian Upah</span>
+                                {detailSortField === 'shareWage' ? (
+                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-850">
-                          {selectedWorkerDetails?.details.length === 0 ? (
+                          {sortedWorkerDetailsList.length === 0 ? (
                             <tr>
                               <td colSpan="7" className="p-8 text-center text-slate-500 italic">
                                 Tidak ada riwayat pekerjaan.
                               </td>
                             </tr>
                           ) : (
-                            selectedWorkerDetails?.details.map((job) => {
+                            sortedWorkerDetailsList.map((job) => {
                               const dateParts = job.tanggal ? String(job.tanggal).split('T')[0].split('-') : []
                               const formattedDate = dateParts.length === 3
                                 ? `${parseInt(dateParts[2], 10)} ${['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][parseInt(dateParts[1], 10) - 1]} ${dateParts[0]}`
@@ -837,26 +999,81 @@ const Karyawan = () => {
 
                   {/* Withdrawal List Title */}
                   <div className="space-y-2">
-                    <h5 className="text-xs font-bold text-slate-450 uppercase tracking-wider">2. Riwayat Pengambilan Kasbon & Payout Gaji</h5>
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-bold text-slate-450 uppercase tracking-wider">2. Riwayat Pengambilan Kasbon & Payout Gaji</h5>
+                      <span className="text-[10px] text-slate-500 italic print:hidden">* Klik header kolom untuk mengurutkan data</span>
+                    </div>
                     <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/40">
                       <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                         <thead>
-                          <tr className="border-b border-slate-800 text-slate-500 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50">
-                            <th className="p-4">Tanggal Payout</th>
-                            <th className="p-4">Keterangan Pengeluaran</th>
-                            <th className="p-4">Sumber Dana (POS)</th>
-                            <th className="p-4 text-right">Nominal Keluar</th>
+                          <tr className="border-b border-slate-800 text-slate-400 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50 select-none">
+                            <th 
+                              onClick={() => handleWithdrawalSort('tanggal')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Tanggal Payout"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Tanggal Payout</span>
+                                {withdrawalSortField === 'tanggal' ? (
+                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleWithdrawalSort('keterangan')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Keterangan Pengeluaran"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Keterangan Pengeluaran</span>
+                                {withdrawalSortField === 'keterangan' ? (
+                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleWithdrawalSort('pos')}
+                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Sumber Dana (POS)"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>Sumber Dana (POS)</span>
+                                {withdrawalSortField === 'pos' ? (
+                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => handleWithdrawalSort('nominal')}
+                              className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                              title="Urutkan berdasarkan Nominal Keluar"
+                            >
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span>Nominal Keluar</span>
+                                {withdrawalSortField === 'nominal' ? (
+                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
+                                ) : (
+                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
+                                )}
+                              </div>
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-850">
-                          {selectedWorkerDetails?.withdrawalsList.length === 0 ? (
+                          {sortedWithdrawalsList.length === 0 ? (
                             <tr>
                               <td colSpan="4" className="p-8 text-center text-slate-500 italic">
                                 Belum ada kasbon atau pembayaran gaji tercatat di cashflow pada periode ini.
                               </td>
                             </tr>
                           ) : (
-                            selectedWorkerDetails?.withdrawalsList.map((w, idx) => (
+                            sortedWithdrawalsList.map((w, idx) => (
                               <tr key={w.id || idx} className="hover:bg-slate-850/10">
                                 <td className="p-4 text-slate-450 font-mono">
                                   {new Date(w.tanggal).toLocaleDateString('id-ID', {

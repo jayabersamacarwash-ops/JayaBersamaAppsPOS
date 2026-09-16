@@ -4,7 +4,10 @@ import {
   parseDateSafe,
   getShiftForCashier,
   generateUUID,
-  calculateTutupKasirRecap
+  calculateTutupKasirRecap,
+  getJobTimestamp,
+  sortWagesDetails,
+  sortWithdrawalsList
 } from '../helpers'
 
 describe('Base Helpers', () => {
@@ -197,6 +200,59 @@ describe('Base Helpers', () => {
       expect(recap.length).toBe(1)
       expect(recap[0].kategori).toBe('Omzet Harian (QRIS)')
       expect(recap[0].pemasukan).toBe(20000)
+    })
+  })
+
+  describe('sortWagesDetails', () => {
+    const mockJobs = [
+      { id: '1', tanggal: '2026-09-18', jam: '14:00', platNomor: 'B 1234 CD', paket: 'Express', totalHarga: 60000, shareWage: 20000, split: 'Solo 100%' },
+      { id: '2', tanggal: '2026-09-16', jam: '09:30', platNomor: 'D 5678 EF', paket: 'Complete', totalHarga: 120000, shareWage: 40000, split: 'Split 50%' },
+      { id: '3', tanggal: '2026-09-16', jam: '15:45', platNomor: 'A 9999 ZZ', paket: 'Basic', totalHarga: 50000, shareWage: 15000, split: 'Solo 100%' },
+      { id: '4', tanggal: '2026-09-20', jam: '10:00', platNomor: 'B 8888 BB', paket: 'Detailing', totalHarga: 250000, shareWage: 80000, split: 'Split 50%' }
+    ]
+
+    it('should sort by tanggal ascending (terendah ke tertinggi) by default', () => {
+      const sorted = sortWagesDetails(mockJobs, 'tanggal', 'asc')
+      expect(sorted.map(j => j.id)).toEqual(['2', '3', '1', '4'])
+    })
+
+    it('should sort by tanggal descending when requested', () => {
+      const sorted = sortWagesDetails(mockJobs, 'tanggal', 'desc')
+      expect(sorted.map(j => j.id)).toEqual(['4', '1', '3', '2'])
+    })
+
+    it('should sort by platNomor ascending and descending', () => {
+      const asc = sortWagesDetails(mockJobs, 'platNomor', 'asc')
+      expect(asc.map(j => j.platNomor)).toEqual(['A 9999 ZZ', 'B 1234 CD', 'B 8888 BB', 'D 5678 EF'])
+
+      const desc = sortWagesDetails(mockJobs, 'platNomor', 'desc')
+      expect(desc.map(j => j.platNomor)).toEqual(['D 5678 EF', 'B 8888 BB', 'B 1234 CD', 'A 9999 ZZ'])
+    })
+
+    it('should sort by numeric shareWage ascending and descending', () => {
+      const asc = sortWagesDetails(mockJobs, 'shareWage', 'asc')
+      expect(asc.map(j => j.shareWage)).toEqual([15000, 20000, 40000, 80000])
+
+      const desc = sortWagesDetails(mockJobs, 'shareWage', 'desc')
+      expect(desc.map(j => j.shareWage)).toEqual([80000, 40000, 20000, 15000])
+    })
+  })
+
+  describe('sortWithdrawalsList', () => {
+    const mockWithdrawals = [
+      { id: 'w1', tanggal: '2026-09-18', keterangan: 'Kasbon Angga', pos: 'SALDO CASH', nominal: 50000 },
+      { id: 'w2', tanggal: '2026-09-16', keterangan: 'Beli Sabun', pos: 'REKENING Y', nominal: 150000 },
+      { id: 'w3', tanggal: '2026-09-20', keterangan: 'Kasbon Angga 2', pos: 'SALDO CASH', nominal: 25000 }
+    ]
+
+    it('should sort withdrawals by tanggal ascending', () => {
+      const sorted = sortWithdrawalsList(mockWithdrawals, 'tanggal', 'asc')
+      expect(sorted.map(w => w.id)).toEqual(['w2', 'w1', 'w3'])
+    })
+
+    it('should sort withdrawals by nominal descending', () => {
+      const sorted = sortWithdrawalsList(mockWithdrawals, 'nominal', 'desc')
+      expect(sorted.map(w => w.nominal)).toEqual([150000, 50000, 25000])
     })
   })
 })

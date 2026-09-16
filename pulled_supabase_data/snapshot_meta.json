@@ -1,0 +1,70 @@
+{
+  "pulled_at": "2026-09-16T10:10:10.465Z",
+  "source_url": "https://grwvhsqxuypcdxxqshgs...",
+  "tables": [
+    {
+      "table": "struk",
+      "count": 4187
+    },
+    {
+      "table": "carwash",
+      "count": 4300
+    },
+    {
+      "table": "cafe",
+      "count": 1475
+    },
+    {
+      "table": "cashflow",
+      "count": 1710
+    },
+    {
+      "table": "pengeluaran",
+      "count": 774
+    },
+    {
+      "table": "stok_barang",
+      "count": 19
+    },
+    {
+      "table": "daftar_harga_menu",
+      "count": 37
+    },
+    {
+      "table": "resep",
+      "count": 63
+    },
+    {
+      "table": "karyawan_cuci",
+      "count": 0
+    },
+    {
+      "table": "kasir",
+      "count": 8
+    },
+    {
+      "table": "metode_bayar",
+      "count": 3
+    },
+    {
+      "table": "diskon",
+      "count": 0
+    },
+    {
+      "table": "pos_balances",
+      "count": 4
+    },
+    {
+      "table": "barang_masuk",
+      "count": 0
+    },
+    {
+      "table": "barang_keluar",
+      "count": 2244
+    },
+    {
+      "table": "profiles",
+      "count": 10
+    }
+  ]
+}

@@ -79,6 +79,7 @@ const Finance = () => {
   const [carwashList, setCarwashList] = useState([])
   const [cafeList, setCafeList] = useState([])
   const [expensesList, setExpensesList] = useState([])
+  const [masterCategories, setMasterCategories] = useState([])
   const [stokBahan, setStokBahan] = useState([])
   const [summary, setSummary] = useState({ totalIncome: 0, totalExpense: 0, totalBalance: 0 })
 
@@ -218,16 +219,21 @@ const Finance = () => {
 
   const allKategoriOptions = useMemo(() => {
     const map = new Map()
+    // Kategori dari Master Categories (Database)
+    masterCategories.filter(c => c.tipe_arus === 'PENGELUARAN').forEach(c => {
+      const norm = normalizeCategory(c.nama_kategori)
+      if (norm) map.set(norm.toLowerCase(), norm)
+    })
     defaultKategoriOptions.forEach(k => {
       const norm = normalizeCategory(k)
-      if (norm) map.set(norm.toLowerCase(), norm)
+      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     customKategoriList.forEach(k => {
       const norm = normalizeCategory(k)
       if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     return Array.from(map.values())
-  }, [customKategoriList])
+  }, [masterCategories, customKategoriList])
 
   const allIncomeJenisOptions = useMemo(() => {
     const map = new Map()
@@ -244,16 +250,21 @@ const Finance = () => {
 
   const allIncomeKategoriOptions = useMemo(() => {
     const map = new Map()
+    // Kategori dari Master Categories (Database)
+    masterCategories.filter(c => c.tipe_arus === 'PEMASUKAN').forEach(c => {
+      const norm = normalizeCategory(c.nama_kategori)
+      if (norm) map.set(norm.toLowerCase(), norm)
+    })
     defaultIncomeKategoriOptions.forEach(k => {
       const norm = normalizeCategory(k)
-      if (norm) map.set(norm.toLowerCase(), norm)
+      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     customIncomeKategoriList.forEach(k => {
       const norm = normalizeCategory(k)
       if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     return Array.from(map.values())
-  }, [customIncomeKategoriList])
+  }, [masterCategories, customIncomeKategoriList])
 
   // Backward compatibility alias
   const jenisOptions = allJenisOptions
@@ -356,6 +367,12 @@ const Finance = () => {
       // 5. Fetch Expenses (Pengeluaran)
       const expData = await fetchAllData('pengeluaran', '*', 'tanggal')
       setExpensesList(expData || [])
+
+      // 5.1 Fetch Master Categories
+      const { data: mcData } = await supabase.from('master_categories').select('*')
+      if (mcData && mcData.length > 0) {
+        setMasterCategories(mcData)
+      }
 
       // 6. Fetch Stok Barang
       const { data: sbData } = await supabase.from('stok_barang').select('id_bahan_baku, nama_produk, satuan')

@@ -40,43 +40,17 @@ function sqlVal(val) {
   return `'${str}'`
 }
 
-async function exportTable(tableName) {
-  console.log(`📦 Mengambil data dari tabel: ${tableName}...`)
-  try {
-    const url = `${supabaseUrl}/rest/v1/${tableName}?select=*`
-    const res = await fetch(url, {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!res.ok) {
-      const errText = await res.text()
-      console.warn(`⚠️ Peringatan tabel ${tableName} (${res.status}):`, errText)
-      return []
-    }
-
-    const data = await res.json()
-    return Array.isArray(data) ? data : []
-  } catch (err) {
-    console.warn(`⚠️ Gagal mengambil tabel ${tableName}:`, err.message)
-    return []
-  }
-}
-
 async function main() {
-  console.log('🚀 Memulai ekspor data snapshot dari Supabase ke Cloudflare D1...')
+  console.log('🚀 Memulai ekspor data snapshot dari pulled_supabase_data ke Cloudflare D1...')
 
   const tables = [
+    'profiles',
     'kasir',
     'metode_bayar',
     'stok_barang',
     'daftar_harga_menu',
     'resep',
     'karyawan_cuci',
-    'profiles',
     'struk',
     'cafe',
     'carwash',
@@ -86,13 +60,21 @@ async function main() {
     'cashflow',
   ]
 
+  const dataDir = path.resolve('pulled_supabase_data')
   let sqlOutput = '-- Snapshot Data dari Supabase untuk Cloudflare D1\n'
   sqlOutput += '-- Generated: ' + new Date().toISOString() + '\n\n'
 
   for (const table of tables) {
-    const rows = await exportTable(table)
-    if (rows.length === 0) continue
+    const filePath = path.join(dataDir, `${table}.json`)
+    if (!fs.existsSync(filePath)) {
+      console.log(`⚠️ File ${table}.json tidak ditemukan, dilewati.`)
+      continue
+    }
 
+    const rows = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    if (!Array.isArray(rows) || rows.length === 0) continue
+
+    console.log(`📦 Memproses tabel ${table} (${rows.length} baris)...`)
     sqlOutput += `-- Data Tabel ${table} (${rows.length} baris)\n`
     for (const row of rows) {
       const keys = Object.keys(row)
