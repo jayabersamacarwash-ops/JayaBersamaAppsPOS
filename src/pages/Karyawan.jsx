@@ -159,7 +159,7 @@ const Karyawan = () => {
     setError('')
     try {
       // 1. Fetch Carwash transactions
-      const { data: cwData, error: cwErr } = await supabase
+      let cwQuery = supabase
         .from('carwash')
         .select(`
           id_transaksi,
@@ -181,29 +181,41 @@ const Karyawan = () => {
           tanggal
         `)
         .neq('status', 'Batal')
-        .gte('tanggal', wagesStartDate)
-        .lte('tanggal', wagesEndDate)
       
+      if (wagesStartDate && String(wagesStartDate).trim() !== '') {
+        cwQuery = cwQuery.gte('tanggal', wagesStartDate)
+      }
+      if (wagesEndDate && String(wagesEndDate).trim() !== '') {
+        cwQuery = cwQuery.lte('tanggal', wagesEndDate)
+      }
+      
+      const { data: cwData, error: cwErr } = await cwQuery
       if (cwErr) throw cwErr
       setCarwashWagesList(cwData || [])
 
       // 2. Fetch Cashflow entries for deductions
-      const { data: cfData, error: cfErr } = await supabase
-        .from('cashflow')
-        .select('*')
-        .gte('tanggal', wagesStartDate)
-        .lte('tanggal', wagesEndDate)
+      let cfQuery = supabase.from('cashflow').select('*')
+      if (wagesStartDate && String(wagesStartDate).trim() !== '') {
+        cfQuery = cfQuery.gte('tanggal', wagesStartDate)
+      }
+      if (wagesEndDate && String(wagesEndDate).trim() !== '') {
+        cfQuery = cfQuery.lte('tanggal', wagesEndDate)
+      }
       
+      const { data: cfData, error: cfErr } = await cfQuery
       if (cfErr) throw cfErr
       setCashflowList(cfData || [])
 
       // 3. Fetch Pengeluaran entries for deductions
-      const { data: expData, error: expErr } = await supabase
-        .from('pengeluaran')
-        .select('*')
-        .gte('tanggal', wagesStartDate)
-        .lte('tanggal', wagesEndDate)
+      let expQuery = supabase.from('pengeluaran').select('*')
+      if (wagesStartDate && String(wagesStartDate).trim() !== '') {
+        expQuery = expQuery.gte('tanggal', wagesStartDate)
+      }
+      if (wagesEndDate && String(wagesEndDate).trim() !== '') {
+        expQuery = expQuery.lte('tanggal', wagesEndDate)
+      }
       
+      const { data: expData, error: expErr } = await expQuery
       if (expErr) throw expErr
       setPengeluaranList(expData || [])
     } catch (err) {
