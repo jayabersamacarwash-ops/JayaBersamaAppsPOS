@@ -687,3 +687,217 @@ export class GeneralLedgerService {
     return { success: true }
   }
 }
+
+export const STANDARD_COA = [
+  { id: 'acc_1001', code: '1001', name: 'Kas Kasir (Cash on Hand)', category: 'ASSET', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_1002', code: '1002', name: 'Kas Bank / QRIS Settlement', category: 'ASSET', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_1200', code: '1200', name: 'Piutang Usaha / Casbon Karyawan', category: 'ASSET', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_1300', code: '1300', name: 'Persediaan Bahan Baku & Stok', category: 'ASSET', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_2001', code: '2001', name: 'Hutang Usaha (AP - Supplier)', category: 'LIABILITY', normal_balance: 'CREDIT', is_active: true },
+  { id: 'acc_2002', code: '2002', name: 'Hutang Gaji & Komisi Kru', category: 'LIABILITY', normal_balance: 'CREDIT', is_active: true },
+  { id: 'acc_3001', code: '3001', name: 'Modal Disetor Pemilik', category: 'EQUITY', normal_balance: 'CREDIT', is_active: true },
+  { id: 'acc_3002', code: '3002', name: 'Prive / Penarikan Pribadi Owner', category: 'EQUITY', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_4001', code: '4001', name: 'Pendapatan Cafe & F&B', category: 'REVENUE', normal_balance: 'CREDIT', is_active: true },
+  { id: 'acc_4002', code: '4002', name: 'Pendapatan Jasa Carwash', category: 'REVENUE', normal_balance: 'CREDIT', is_active: true },
+  { id: 'acc_4003', code: '4003', name: 'Pendapatan Sewa Tenant & Non-POS', category: 'REVENUE', normal_balance: 'CREDIT', is_active: true },
+  { id: 'acc_5001', code: '5001', name: 'HPP - Bahan Baku F&B Cafe', category: 'EXPENSE', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_5002', code: '5002', name: 'HPP - Shampoo & Chemical Carwash', category: 'EXPENSE', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_6001', code: '6001', name: 'Beban Komisi, Upah & Gaji Karyawan', category: 'EXPENSE', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_6002', code: '6002', name: 'Beban Listrik, Air & Utilitas', category: 'EXPENSE', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_6003', code: '6003', name: 'Beban Perawatan & Servis Mesin', category: 'EXPENSE', normal_balance: 'DEBIT', is_active: true },
+  { id: 'acc_6004', code: '6004', name: 'Beban Operasional Umum & Perlengkapan', category: 'EXPENSE', normal_balance: 'DEBIT', is_active: true },
+]
+
+/**
+ * Creates an in-memory GeneralLedgerService hydrated directly from Supabase live tables.
+ */
+export function createLiveGlService({
+  tenant_id = DEFAULT_TENANT_ID,
+  branch_id = DEFAULT_BRANCH_ID,
+  cashflow = [],
+  carwash = [],
+  struk = [],
+  pengeluaran = [],
+  barangMasuk = [],
+  posBalances = [],
+  masterCategories = [],
+  chartOfAccounts = [],
+} = {}) {
+  const coa = (chartOfAccounts && chartOfAccounts.length > 0)
+    ? chartOfAccounts.map(c => ({ ...c, tenant_id: c.tenant_id || tenant_id }))
+    : STANDARD_COA.map(c => ({ ...c, tenant_id }))
+
+  const store = {
+    data: {
+      chart_of_accounts: coa,
+      journal_entries: [],
+      journal_entry_lines: [],
+      cashflow: [...cashflow],
+      carwash: [...carwash],
+      struk: [...struk],
+      pengeluaran: [...pengeluaran],
+      barang_masuk: [...barangMasuk],
+      pos_balances: [...posBalances],
+      master_categories: [...masterCategories],
+      stok_barang: [],
+      stock_movements: [],
+    },
+    getTable(name) {
+      if (!this.data[name]) this.data[name] = []
+      return this.data[name]
+    },
+    saveToStorage() {
+      // In-memory instance, no-op or optional sync
+    },
+    postJournalEntry(payload) {
+      const entryId = `je_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      const totalDebit = (payload.lines || []).reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0)
+      const totalCredit = (payload.lines || []).reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0)
+
+      const entry = {
+        id: entryId,
+        tenant_id: payload.tenant_id || tenant_id,
+        branch_id: payload.branch_id || branch_id,
+        entry_no: `JE-${new Date().toISOString().replace(/[-:T]/g, '').substring(0, 8)}-${Math.floor(Math.random() * 900 + 100)}`,
+        date: payload.date || new Date().toISOString().split('T')[0],
+        memo: payload.memo || '',
+        source_type: payload.source_type || 'manual',
+        source_id: payload.source_id || null,
+        total_amount: totalDebit,
+        created_at: new Date().toISOString(),
+      }
+
+      this.data.journal_entries.push(entry)
+
+      ;(payload.lines || []).forEach((line, idx) => {
+        const coaItem = this.data.chart_of_accounts.find(a => a.id === line.account_id)
+        this.data.journal_entry_lines.push({
+          id: `jel_${entryId}_${idx + 1}`,
+          tenant_id: payload.tenant_id || tenant_id,
+          journal_entry_id: entryId,
+          account_id: line.account_id,
+          account_code: line.account_code || coaItem?.code || '',
+          account_name: line.account_name || coaItem?.name || '',
+          debit: parseFloat(line.debit) || 0,
+          credit: parseFloat(line.credit) || 0,
+          memo: line.memo || payload.memo || '',
+        })
+      })
+
+      return entry
+    },
+  }
+
+  // Category to Account ID Resolver
+  const resolveAccountId = (categoryName, fallback = 'acc_6004') => {
+    if (!categoryName) return fallback
+    const matched = masterCategories.find(
+      c => String(c.nama_kategori || '').toLowerCase() === String(categoryName).toLowerCase()
+    )
+    if (matched && matched.account_id) return matched.account_id
+
+    const low = String(categoryName).toLowerCase()
+    if (low.includes('bahan baku') || low.includes('kopi') || low.includes('susu')) return 'acc_5001'
+    if (low.includes('chemical') || low.includes('shampoo') || low.includes('semir')) return 'acc_5002'
+    if (low.includes('listrik') || low.includes('air') || low.includes('wifi') || low.includes('gas')) return 'acc_6002'
+    if (low.includes('servis') || low.includes('mesin') || low.includes('hidrolik') || low.includes('perawatan')) return 'acc_6003'
+    if (low.includes('gaji') || low.includes('komisi')) return 'acc_6001'
+    if (low.includes('casbon') || low.includes('kasbon') || low.includes('piutang')) return 'acc_1200'
+    if (low.includes('prive') || low.includes('penarikan')) return 'acc_3002'
+    if (low.includes('modal')) return 'acc_3001'
+    if (low.includes('tenant') || low.includes('sewa stan') || low.includes('lain-lain')) return 'acc_4003'
+    if (low.includes('carwash') || low.includes('cuci')) return 'acc_4002'
+    if (low.includes('cafe')) return 'acc_4001'
+
+    return fallback
+  }
+
+  // Populate Journals from Cashflow (Master Transaction Stream)
+  cashflow.forEach((cf) => {
+    const masuk = parseFloat(cf.pemasukan) || 0
+    const keluar = parseFloat(cf.pengeluaran) || 0
+    const posAccount = cf.pos === 'SALDO CASH' ? 'acc_1001' : 'acc_1002'
+    const date = cf.tanggal ? String(cf.tanggal).split('T')[0] : new Date().toISOString().split('T')[0]
+    const memo = cf.keterangan_transaksi || cf.kategori || 'Transaksi Cashflow'
+
+    // Check if Transfer / Pindah Saldo
+    const isPindah = String(cf.jenis || '').toLowerCase().includes('pindah') ||
+      String(cf.kategori || '').toLowerCase().includes('pindah') ||
+      String(cf.keterangan_transaksi || '').toLowerCase().includes('pindah saldo') ||
+      String(cf.keterangan_transaksi || '').toLowerCase().includes('transfer kas ke bank')
+
+    if (isPindah && (masuk > 0 || keluar > 0)) {
+      const amount = masuk > 0 ? masuk : keluar
+      store.postJournalEntry({
+        tenant_id,
+        branch_id,
+        date,
+        memo: `[Mutasi Saldo] ${memo}`,
+        source_type: 'cashflow',
+        source_id: cf.id_cashflow,
+        lines: [
+          { account_id: 'acc_1002', debit: amount, credit: 0, memo: 'Penerimaan Bank' },
+          { account_id: 'acc_1001', debit: 0, credit: amount, memo: 'Pengeluaran Kas Tunai' },
+        ],
+      })
+    } else if (masuk > 0) {
+      let creditAcc = resolveAccountId(cf.kategori, 'acc_4003')
+      if (String(cf.jenis || '').toLowerCase().includes('carwash') || String(cf.keterangan_transaksi || '').toLowerCase().includes('carwash')) {
+        creditAcc = 'acc_4002'
+      } else if (String(cf.jenis || '').toLowerCase().includes('cafe') || String(cf.keterangan_transaksi || '').toLowerCase().includes('cafe')) {
+        creditAcc = 'acc_4001'
+      }
+
+      store.postJournalEntry({
+        tenant_id,
+        branch_id,
+        date,
+        memo: `[Pemasukan] ${memo}`,
+        source_type: 'cashflow',
+        source_id: cf.id_cashflow,
+        lines: [
+          { account_id: posAccount, debit: masuk, credit: 0, memo: `Penerimaan Kas/Bank (${cf.pos || 'CASH'})` },
+          { account_id: creditAcc, debit: 0, credit: masuk, memo: cf.kategori || 'Pendapatan' },
+        ],
+      })
+    } else if (keluar > 0) {
+      const debitAcc = resolveAccountId(cf.kategori, 'acc_6004')
+      store.postJournalEntry({
+        tenant_id,
+        branch_id,
+        date,
+        memo: `[Pengeluaran] ${memo}`,
+        source_type: 'cashflow',
+        source_id: cf.id_cashflow,
+        lines: [
+          { account_id: debitAcc, debit: keluar, credit: 0, memo: cf.kategori || 'Beban Operasional' },
+          { account_id: posAccount, debit: 0, credit: keluar, memo: `Pengeluaran Kas/Bank (${cf.pos || 'CASH'})` },
+        ],
+      })
+    }
+  })
+
+  // Also hydrate Goods Receipt (Barang Masuk) if not duplicated in cashflow
+  barangMasuk.forEach((bm) => {
+    const totalHarga = parseFloat(bm.total_harga) || 0
+    if (totalHarga > 0) {
+      const date = bm.tanggal ? String(bm.tanggal).split('T')[0] : new Date().toISOString().split('T')[0]
+      const payAcc = (bm.metode_bayar === 'BANK' || bm.metode_bayar === 'TRANSFER' || bm.metode_bayar === 'QRIS') ? 'acc_1002' : 'acc_1001'
+      store.postJournalEntry({
+        tenant_id,
+        branch_id,
+        date,
+        memo: `[Barang Masuk] ${bm.nama_barang || 'Stok'} (${bm.qty} ${bm.satuan || 'pcs'})`,
+        source_type: 'barang_masuk',
+        source_id: bm.id_barang_masuk || bm.id,
+        lines: [
+          { account_id: 'acc_1300', debit: totalHarga, credit: 0, memo: 'Persediaan Bahan Baku' },
+          { account_id: payAcc, debit: 0, credit: totalHarga, memo: `Pembelian Persediaan (${bm.metode_bayar || 'CASH'})` },
+        ],
+      })
+    }
+  })
+
+  return new GeneralLedgerService(store)
+}
+

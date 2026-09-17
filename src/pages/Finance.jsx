@@ -26,6 +26,8 @@ import {
   RotateCcw
 } from 'lucide-react'
 import { formatRupiah, parseDateSafe, generateUUID } from '../utils/helpers'
+import { useAuth } from '../context/AuthContext'
+import { DEFAULT_MASTER_CATEGORIES, filterCategoriesByRole, JENIS_GROUPS } from '../constants/masterCategories'
 import {
   validateExpenseForm,
   formatExpensePayload,
@@ -203,68 +205,82 @@ const Finance = () => {
     }
   }
 
-  // Combined options (Standard choices + intentional custom choices, normalized with deduplication)
+  // Role-based Master Category Permissions
+  const { profile, user } = useAuth()
+  const userRole = profile?.role || user?.role || 'Owner'
+
+  const activeMasterCats = useMemo(() => {
+    return masterCategories && masterCategories.length > 0 ? masterCategories : DEFAULT_MASTER_CATEGORIES
+  }, [masterCategories])
+
+  const allowedExpenseCats = useMemo(() => {
+    return filterCategoriesByRole(activeMasterCats, userRole, 'PENGELUARAN')
+  }, [activeMasterCats, userRole])
+
+  const allowedIncomeCats = useMemo(() => {
+    return filterCategoriesByRole(activeMasterCats, userRole, 'PEMASUKAN')
+  }, [activeMasterCats, userRole])
+
+  // Combined options (Standard choices filtered by role + custom choices)
   const allJenisOptions = useMemo(() => {
-    const map = new Map()
-    defaultJenisOptions.forEach(j => {
-      const norm = normalizeJenis(j)
-      if (norm) map.set(norm.toLowerCase(), norm)
-    })
+    const set = new Set(allowedExpenseCats.map(c => c.jenis).filter(Boolean))
     customJenisList.forEach(j => {
       const norm = normalizeJenis(j)
-      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
+      if (norm) set.add(norm)
     })
-    return Array.from(map.values())
-  }, [customJenisList])
+    const list = Array.from(set)
+    return list.length > 0 ? list : ['Pengeluaran Cafe', 'Pengeluaran Carwash', 'Pengeluaran Bersama']
+  }, [allowedExpenseCats, customJenisList])
 
   const allKategoriOptions = useMemo(() => {
+    let cats = allowedExpenseCats
+    if (expenseForm.jenis) {
+      const filteredByJenis = allowedExpenseCats.filter(c => c.jenis === expenseForm.jenis)
+      if (filteredByJenis.length > 0) {
+        cats = filteredByJenis
+      }
+    }
     const map = new Map()
-    // Kategori dari Master Categories (Database)
-    masterCategories.filter(c => c.tipe_arus === 'PENGELUARAN').forEach(c => {
+    cats.forEach(c => {
       const norm = normalizeCategory(c.nama_kategori)
       if (norm) map.set(norm.toLowerCase(), norm)
-    })
-    defaultKategoriOptions.forEach(k => {
-      const norm = normalizeCategory(k)
-      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     customKategoriList.forEach(k => {
       const norm = normalizeCategory(k)
       if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     return Array.from(map.values())
-  }, [masterCategories, customKategoriList])
+  }, [allowedExpenseCats, expenseForm.jenis, customKategoriList])
 
   const allIncomeJenisOptions = useMemo(() => {
-    const map = new Map()
-    defaultIncomeJenisOptions.forEach(j => {
-      const norm = normalizeJenis(j)
-      if (norm) map.set(norm.toLowerCase(), norm)
-    })
+    const set = new Set(allowedIncomeCats.map(c => c.jenis).filter(Boolean))
     customIncomeJenisList.forEach(j => {
       const norm = normalizeJenis(j)
-      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
+      if (norm) set.add(norm)
     })
-    return Array.from(map.values())
-  }, [customIncomeJenisList])
+    const list = Array.from(set)
+    return list.length > 0 ? list : ['Pemasukan Non-POS']
+  }, [allowedIncomeCats, customIncomeJenisList])
 
   const allIncomeKategoriOptions = useMemo(() => {
+    let cats = allowedIncomeCats
+    if (incomeForm.jenis) {
+      const filteredByJenis = allowedIncomeCats.filter(c => c.jenis === incomeForm.jenis)
+      if (filteredByJenis.length > 0) {
+        cats = filteredByJenis
+      }
+    }
     const map = new Map()
-    // Kategori dari Master Categories (Database)
-    masterCategories.filter(c => c.tipe_arus === 'PEMASUKAN').forEach(c => {
+    cats.forEach(c => {
       const norm = normalizeCategory(c.nama_kategori)
       if (norm) map.set(norm.toLowerCase(), norm)
-    })
-    defaultIncomeKategoriOptions.forEach(k => {
-      const norm = normalizeCategory(k)
-      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     customIncomeKategoriList.forEach(k => {
       const norm = normalizeCategory(k)
       if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
     })
     return Array.from(map.values())
-  }, [masterCategories, customIncomeKategoriList])
+  }, [allowedIncomeCats, incomeForm.jenis, customIncomeKategoriList])
 
   // Backward compatibility alias
   const jenisOptions = allJenisOptions

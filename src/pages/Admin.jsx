@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { formatRupiah } from '../utils/helpers'
 import InteractiveCalendar from '../components/InteractiveCalendar'
+import { DEFAULT_MASTER_CATEGORIES, JENIS_GROUPS } from '../constants/masterCategories'
 
 const Admin = () => {
   const { registerKasir } = useAuth()
@@ -554,6 +555,57 @@ const Admin = () => {
     } catch (err) {
       console.error(err)
       await showAlert('Gagal menghapus kategori: ' + err.message, 'Error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggleBolehKasir = async (cat) => {
+    try {
+      const nextVal = !cat.boleh_kasir
+      const { error: err } = await supabase
+        .from('master_categories')
+        .upsert({
+          id: cat.id,
+          nama_kategori: cat.nama_kategori,
+          jenis: cat.jenis,
+          tipe_arus: cat.tipe_arus,
+          account_id: cat.account_id || 'acc_6004',
+          boleh_kasir: nextVal,
+          is_active: cat.is_active !== false,
+        })
+
+      if (err) throw err
+      await loadAdminData()
+    } catch (err) {
+      console.error('Error toggling boleh_kasir:', err)
+      setError('Gagal mengubah hak akses kasir: ' + err.message)
+    }
+  }
+
+  const handleSeedStandardCategories = async () => {
+    const confirmed = await showConfirm(
+      'Apakah Anda ingin menerapkan daftar Master Kategori Standar (Cafe, Carwash, Bersama, Non-Beban, Pemasukan)? Data kategori standar akan disinkronkan ke database.',
+      'Terapkan Kategori Standar'
+    )
+    if (!confirmed) return
+    setLoading(true)
+    try {
+      for (const cat of DEFAULT_MASTER_CATEGORIES) {
+        await supabase.from('master_categories').upsert({
+          id: cat.id,
+          nama_kategori: cat.nama_kategori,
+          jenis: cat.jenis,
+          tipe_arus: cat.tipe_arus,
+          account_id: cat.account_id,
+          boleh_kasir: cat.boleh_kasir,
+          is_active: true,
+        })
+      }
+      setSuccess('Master Kategori Standar berhasil disinkronkan ke database!')
+      await loadAdminData()
+    } catch (err) {
+      setError('Gagal sinkronisasi kategori: ' + err.message)
     } finally {
       setLoading(false)
     }
@@ -1501,30 +1553,42 @@ const Admin = () => {
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Tag className="text-brand-emerald" size={20} />
-                <span>Master Kategori Cashflow & Pemetaan Akun Akuntansi</span>
+                <span>Master Kategori Cashflow & Hak Akses Kasir POS</span>
               </h3>
               <p className="text-xs text-slate-400 mt-1">
                 Atur kategori pengeluaran dan pemasukan, hubungkan ke Kode Akun Buku Besar (COA), serta tentukan apakah kasir berhak mencatatnya di POS.
               </p>
             </div>
-            <button
-              onClick={() => {
-                setEditingCategory(null)
-                setCategoryForm({
-                  nama_kategori: '',
-                  jenis: 'Pengeluaran Cafe',
-                  tipe_arus: 'PENGELUARAN',
-                  account_id: 'acc_6004',
-                  boleh_kasir: false,
-                  is_active: true,
-                })
-                setShowCategoryModal(true)
-              }}
-              className="flex items-center gap-1.5 px-4 py-2 bg-brand-emerald hover:bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-brand-emerald/20 transition-all"
-            >
-              <Plus size={14} />
-              Tambah Kategori Baru
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleSeedStandardCategories}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition-all"
+                title="Terapkan dan sinkronkan master kategori baku ke database"
+              >
+                <RotateCcw size={13} />
+                Terapkan Kategori Standar
+              </button>
+              <button
+                onClick={() => {
+                  setEditingCategory(null)
+                  setCategoryForm({
+                    nama_kategori: '',
+                    jenis: 'Pengeluaran Cafe',
+                    tipe_arus: 'PENGELUARAN',
+                    account_id: 'acc_6004',
+                    boleh_kasir: false,
+                    is_active: true,
+                  })
+                  setShowCategoryModal(true)
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-brand-emerald hover:bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-brand-emerald/20 transition-all"
+              >
+                <Plus size={14} />
+                Tambah Kategori Baru
+              </button>
+            </div>
           </div>
 
           <div className="glass-panel rounded-2xl border border-slate-800/80 overflow-hidden">
@@ -1536,7 +1600,7 @@ const Admin = () => {
                     <th className="py-3 px-4">Kelompok Arus / Jenis</th>
                     <th className="py-3 px-4">Tipe Arus</th>
                     <th className="py-3 px-4">Akun Buku Besar (COA)</th>
-                    <th className="py-3 px-4 text-center">Akses Kasir</th>
+                    <th className="py-3 px-4 text-center">Akses Kasir POS</th>
                     <th className="py-3 px-4 text-right">Aksi</th>
                   </tr>
                 </thead>
@@ -1544,14 +1608,23 @@ const Admin = () => {
                   {masterCategories.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-8 text-center text-slate-500">
-                        Belum ada kategori yang dikonfigurasi.
+                        Belum ada kategori yang dikonfigurasi. Klik tombol "Terapkan Kategori Standar" di atas untuk memuat kategori bawaan.
                       </td>
                     </tr>
                   ) : (
                     masterCategories.map((cat) => (
-                      <tr key={cat.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3 px-4 font-bold text-white">{cat.nama_kategori}</td>
-                        <td className="py-3 px-4 text-slate-300">{cat.jenis}</td>
+                      <tr key={cat.id || cat.nama_kategori} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3 px-4 font-bold text-white">
+                          <div>{cat.nama_kategori}</div>
+                          {cat.deskripsi && (
+                            <div className="text-[10px] text-slate-500 font-normal">{cat.deskripsi}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-300 font-medium">
+                          <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-[11px]">
+                            {cat.jenis}
+                          </span>
+                        </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             cat.tipe_arus === 'PEMASUKAN' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
@@ -1563,15 +1636,18 @@ const Admin = () => {
                           {cat.account_id || 'acc_6004'}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          {cat.boleh_kasir ? (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[10px]">
-                              Kasir Boleh
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-bold text-[10px]">
-                              Hanya Owner
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBolehKasir(cat)}
+                            className={`px-2.5 py-1 rounded-full font-bold text-[10px] transition-all cursor-pointer border ${
+                              cat.boleh_kasir
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                            }`}
+                            title="Klik untuk mengubah izin akses kasir"
+                          >
+                            {cat.boleh_kasir ? '✓ Kasir Boleh' : '🔒 Hanya Owner'}
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex justify-end gap-2">
@@ -1585,16 +1661,19 @@ const Admin = () => {
                                   account_id: cat.account_id || 'acc_6004',
                                   boleh_kasir: !!cat.boleh_kasir,
                                   is_active: cat.is_active !== false,
+                                  deskripsi: cat.deskripsi || '',
                                 })
                                 setShowCategoryModal(true)
                               }}
                               className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
+                              title="Edit Kategori"
                             >
                               <Edit3 size={13} />
                             </button>
                             <button
                               onClick={() => handleDeleteCategory(cat)}
                               className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                              title="Hapus Kategori"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -1926,11 +2005,9 @@ const Admin = () => {
                     onChange={(e) => setCategoryForm(prev => ({ ...prev, jenis: e.target.value }))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-emerald"
                   >
-                    <option value="Pengeluaran Cafe">Pengeluaran Cafe</option>
-                    <option value="Pengeluaran Carwash">Pengeluaran Carwash</option>
-                    <option value="Pengeluaran Bersama">Pengeluaran Bersama</option>
-                    <option value="Mutasi Internal">Mutasi Internal (Pindah/Prive)</option>
-                    <option value="Pemasukan Non-POS">Pemasukan Non-POS</option>
+                    {JENIS_GROUPS.map(j => (
+                      <option key={j} value={j}>{j}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -1946,16 +2023,21 @@ const Admin = () => {
                 >
                   <option value="acc_5001">[5001] HPP - Bahan Baku F&B Cafe</option>
                   <option value="acc_5002">[5002] HPP - Shampoo & Chemical Carwash</option>
-                  <option value="acc_6001">[6001] Beban Komisi & Upah Cuci Mobil / Gaji</option>
+                  <option value="acc_6001">[6001] Beban Komisi, Upah & Gaji Karyawan</option>
                   <option value="acc_6002">[6002] Beban Listrik, Air & Utilitas</option>
                   <option value="acc_6003">[6003] Beban Perawatan & Servis Mesin</option>
                   <option value="acc_6004">[6004] Beban Operasional Umum & Perlengkapan</option>
+                  <option value="acc_1200">[1200] Piutang Usaha / Casbon Karyawan</option>
                   <option value="acc_1300">[1300] Persediaan Bahan Baku & Stok</option>
+                  <option value="acc_1001">[1001] Kas Kasir (Cash on Hand)</option>
                   <option value="acc_1002">[1002] Kas Bank / QRIS Settlement</option>
                   <option value="acc_2001">[2001] Hutang Usaha (AP Supplier)</option>
+                  <option value="acc_2002">[2002] Hutang Gaji & Komisi Kru</option>
                   <option value="acc_3001">[3001] Modal Disetor Pemilik</option>
-                  <option value="acc_3002">[3002] Prive / Penarikan Laba Owner</option>
-                  <option value="acc_4003">[4003] Pendapatan Sewa Tenant / Kemitraan</option>
+                  <option value="acc_3002">[3002] Prive / Penarikan Pribadi Owner</option>
+                  <option value="acc_4001">[4001] Pendapatan Cafe & F&B</option>
+                  <option value="acc_4002">[4002] Pendapatan Jasa Carwash</option>
+                  <option value="acc_4003">[4003] Pendapatan Sewa Tenant & Non-POS</option>
                 </select>
               </div>
 

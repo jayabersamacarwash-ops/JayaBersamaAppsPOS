@@ -20,6 +20,8 @@ import {
   RefreshCw
 } from 'lucide-react'
 import { formatRupiah } from '../../utils/helpers'
+import { createLiveGlService } from '../../services/generalLedgerService'
+import { DEFAULT_MASTER_CATEGORIES } from '../../constants/masterCategories'
 
 export default function GeneralLedgerView({ tenantId }) {
   const [activeGlTab, setActiveGlTab] = useState('trial_balance') // 'trial_balance' | 'balance_sheet' | 'income_statement' | 'ledger_drilldown'
@@ -50,11 +52,39 @@ export default function GeneralLedgerView({ tenantId }) {
     nama_karyawan: '',
     plat_nomor: '',
   })
+  const [glInstance, setGlInstance] = useState(null)
 
-  const loadGlData = () => {
+  const loadGlData = async () => {
     setLoading(true)
     try {
-      const gl = supabase.localDb?.gl || supabase.erp?.gl
+      let gl = supabase.localDb?.gl || supabase.erp?.gl
+
+      if (!gl) {
+        // Hydrate from live Supabase tables directly
+        const [{ data: cfData }, { data: bmData }, { data: catData }, { data: posData }] = await Promise.all([
+          supabase.from('cashflow').select('*').order('tanggal', { ascending: true }),
+          supabase.from('barang_masuk').select('*'),
+          supabase.from('master_categories').select('*'),
+          supabase.from('pos_balances').select('*'),
+        ])
+
+        const activeCats = (catData && catData.length > 0) ? catData : DEFAULT_MASTER_CATEGORIES
+        setCategoriesList(activeCats)
+
+        gl = createLiveGlService({
+          tenant_id: tenantId,
+          cashflow: cfData || [],
+          barangMasuk: bmData || [],
+          posBalances: posData || [],
+          masterCategories: activeCats,
+        })
+      } else {
+        const { data: catData } = await supabase.from('master_categories').select('*')
+        setCategoriesList((catData && catData.length > 0) ? catData : DEFAULT_MASTER_CATEGORIES)
+      }
+
+      setGlInstance(gl)
+
       if (gl) {
         const tb = gl.getTrialBalance(tenantId)
         const bs = gl.getBalanceSheet(tenantId)
@@ -71,11 +101,6 @@ export default function GeneralLedgerView({ tenantId }) {
           setDrilldownLedger(dl)
         }
       }
-
-      // Ambil master categories untuk dropdown
-      supabase.from('master_categories').select('*').then(({ data }) => {
-        if (data) setCategoriesList(data)
-      })
     } catch (err) {
       console.error('Error generating GL reports:', err)
     } finally {
@@ -84,7 +109,7 @@ export default function GeneralLedgerView({ tenantId }) {
   }
 
   const handleOpenDrilldown = (account) => {
-    const gl = supabase.localDb?.gl || supabase.erp?.gl
+    const gl = glInstance || supabase.localDb?.gl || supabase.erp?.gl
     if (!gl) return
     const accObj = trialBalance?.accounts.find(a => a.id === account.id || a.code === account.code) || account
     setDrilldownAccount(accObj)
@@ -93,57 +118,90 @@ export default function GeneralLedgerView({ tenantId }) {
     setShowDrilldownModal(true)
   }
 
-  const handleSaveTransaction = (e) => {
+  const handleSaveTransaction = async (e) => {
     e.preventDefault()
-    const gl = supabase.localDb?.gl || supabase.erp?.gl
-    if (!gl) return
+    const gl = glInstance || supabase.localDb?.gl || supabase.erp?.gl
 
     try {
+      const nom = parseFloat(transForm.nominal) || 0
+      if (nom <= 0) return alert('Nominal harus lebih besar dari 0')
+
       if (editingRow) {
-        gl.updateTransaction({
-          source_type: editingRow.source_type,
-          source_id: editingRow.source_id,
-          tanggal: transForm.tanggal,
-          nominal: parseFloat(transForm.nominal) || 0,
-          keterangan: transForm.keterangan,
-          pos: transForm.pos,
-          kategori: transForm.kategori,
-          tenant_id: tenantId,
-        })
+        if (gl?.updateTransaction) {
+          gl.updateTransaction({
+            source_type: editingRow.source_type,
+            source_id: editingRow.source_id,
+            tanggal: transForm.tanggal,
+            nominal: nom,
+            keterangan: transForm.keterangan,
+            pos: transForm.pos,
+            kategori: transForm.kategori,
+            tenant_id: tenantId,
+          })
+        }
+        // Update Supabase cashflow if id exists
+        if (editingRow.source_id) {
+          await supabase.from('cashflow').update({
+            tanggal: transForm.tanggal,
+            keterangan_transaksi: transForm.keterangan,
+            kategori: transForm.kategori,
+            pos: transForm.pos,
+            pengeluaran: transForm.tipe === 'Pengeluaran' ? nom : 0,
+            pemasukan: transForm.tipe === 'Pemasukan' ? nom : 0,
+          }).or(`id_cashflow.eq.${editingRow.source_id},id_sumber.eq.${editingRow.source_id}`)
+        }
       } else {
-        gl.createManualTransaction({
-          tipe: transForm.tipe,
+        if (gl?.createManualTransaction) {
+          gl.createManualTransaction({
+            tipe: transForm.tipe,
+            tanggal: transForm.tanggal,
+            nominal: nom,
+            keterangan: transForm.keterangan,
+            pos: transForm.pos,
+            kategori: transForm.kategori,
+            account_id: drilldownAccount?.id || selectedAccountId,
+            tenant_id: tenantId,
+          })
+        }
+        // Insert to Supabase cashflow
+        const newCfId = `cf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+        await supabase.from('cashflow').insert({
+          id_cashflow: newCfId,
           tanggal: transForm.tanggal,
-          nominal: parseFloat(transForm.nominal) || 0,
-          keterangan: transForm.keterangan,
-          pos: transForm.pos,
-          kategori: transForm.kategori,
-          account_id: drilldownAccount?.id || selectedAccountId,
-          tenant_id: tenantId,
+          jenis: transForm.tipe,
+          kategori: transForm.kategori || 'Operasional',
+          pemasukan: transForm.tipe === 'Pemasukan' ? nom : 0,
+          pengeluaran: transForm.tipe === 'Pengeluaran' ? nom : 0,
+          pos: transForm.pos || 'SALDO CASH',
+          keterangan_transaksi: transForm.keterangan || 'Mutasi Manual Akuntansi',
         })
       }
       setShowTransModal(false)
       setEditingRow(null)
-      loadGlData()
+      await loadGlData()
     } catch (err) {
       alert('Gagal menyimpan transaksi: ' + err.message)
     }
   }
 
-  const handleDeleteTransaction = (row) => {
+  const handleDeleteTransaction = async (row) => {
     if (!window.confirm(`Apakah Anda yakin ingin menghapus transaksi "${row.memo}"? Perubahan ini akan menghapus data di jurnal dan tabel operasional sumbernya.`)) {
       return
     }
-    const gl = supabase.localDb?.gl || supabase.erp?.gl
-    if (!gl) return
+    const gl = glInstance || supabase.localDb?.gl || supabase.erp?.gl
 
     try {
-      gl.deleteTransaction({
-        source_type: row.source_type,
-        source_id: row.source_id,
-        tenant_id: tenantId,
-      })
-      loadGlData()
+      if (gl?.deleteTransaction) {
+        gl.deleteTransaction({
+          source_type: row.source_type,
+          source_id: row.source_id,
+          tenant_id: tenantId,
+        })
+      }
+      if (row.source_id) {
+        await supabase.from('cashflow').delete().or(`id_cashflow.eq.${row.source_id},id_sumber.eq.${row.source_id}`)
+      }
+      await loadGlData()
     } catch (err) {
       alert('Gagal menghapus transaksi: ' + err.message)
     }

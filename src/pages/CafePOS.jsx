@@ -35,6 +35,7 @@ import {
 } from '../utils/helpers'
 import { addToCart as cartAdd, updateQty as cartUpdate, removeFromCart as cartRemove } from '../utils/cartHelpers'
 import { validatePosExpenseForm, formatPosExpensePayload } from '../utils/financeHelpers'
+import { DEFAULT_MASTER_CATEGORIES } from '../constants/masterCategories'
 import realSeedData from '../services/realSeedData.json'
 
 const getMenuPhoto = (menuName) => {
@@ -587,9 +588,12 @@ const CafePOS = () => {
 
       if (allowedCats && allowedCats.length > 0) {
         setCashierAllowedCategories(allowedCats)
+      } else {
+        setCashierAllowedCategories(DEFAULT_MASTER_CATEGORIES.filter(c => c.boleh_kasir))
       }
     } catch (err) {
       console.error('Error fetching today expenses:', err)
+      setCashierAllowedCategories(DEFAULT_MASTER_CATEGORIES.filter(c => c.boleh_kasir))
     }
   }
 
