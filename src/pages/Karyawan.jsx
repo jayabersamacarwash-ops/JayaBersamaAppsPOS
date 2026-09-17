@@ -70,7 +70,9 @@ const Karyawan = () => {
   const [selectedWageWorker, setSelectedWageWorker] = useState(null)
   const [selectedJobForCrosscheck, setSelectedJobForCrosscheck] = useState(null)
 
-  // Sorting states for Wages Detail History & Cashflow Withdrawals
+  // Sorting states for Wages Summary, Detail History & Cashflow Withdrawals
+  const [summarySortField, setSummarySortField] = useState('totalWage')
+  const [summarySortDirection, setSummarySortDirection] = useState('desc')
   const [detailSortField, setDetailSortField] = useState('tanggal')
   const [detailSortDirection, setDetailSortDirection] = useState('asc') // 'asc' = terendah ke tertinggi (oldest first)
   const [withdrawalSortField, setWithdrawalSortField] = useState('tanggal')
@@ -406,10 +408,45 @@ const Karyawan = () => {
       summary[wName].netWage = summary[wName].totalWage - summary[wName].totalWithdrawals
     })
 
-    return Object.values(summary).sort((a, b) => b.totalWage - a.totalWage)
-  }, [carwashWagesList, cashflowList, pengeluaranList, karyawanCuciList])
+    const list = Object.values(summary)
+    list.sort((a, b) => {
+      let comparison = 0
+      switch (summarySortField) {
+        case 'name':
+          comparison = (a.name || '').localeCompare(b.name || '')
+          break
+        case 'totalCars':
+          comparison = (a.totalCars || 0) - (b.totalCars || 0)
+          break
+        case 'totalWage':
+          comparison = (a.totalWage || 0) - (b.totalWage || 0)
+          break
+        case 'totalWithdrawals':
+          comparison = (a.totalWithdrawals || 0) - (b.totalWithdrawals || 0)
+          break
+        case 'netWage':
+          comparison = (a.netWage || 0) - (b.netWage || 0)
+          break
+        default:
+          comparison = (a.totalWage || 0) - (b.totalWage || 0)
+      }
+      return summarySortDirection === 'asc' ? comparison : -comparison
+    })
+
+    return list
+  }, [carwashWagesList, cashflowList, pengeluaranList, karyawanCuciList, summarySortField, summarySortDirection])
 
   const selectedWorkerDetails = selectedWageWorker ? wagesSummary.find(w => w.name === selectedWageWorker) : null
+
+  // Toggle sorting for Main Wages Summary Table
+  const handleSummarySort = (field) => {
+    if (summarySortField === field) {
+      setSummarySortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSummarySortField(field)
+      setSummarySortDirection(field === 'name' ? 'asc' : 'desc')
+    }
+  }
 
   // Toggle sorting for Job Details
   const handleDetailSort = (field) => {
@@ -745,12 +782,77 @@ const Karyawan = () => {
               <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/40">
                 <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-500 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50">
-                      <th className="p-4">Nama Pencuci</th>
-                      <th className="p-4 text-center">Jumlah Cuci (Mobil)</th>
-                      <th className="p-4 text-right">Gaji Kotor (Rp)</th>
-                      <th className="p-4 text-right">Potongan / Kasbon (Rp)</th>
-                      <th className="p-4 text-right text-brand-emerald">Sisa Gaji Bersih (Rp)</th>
+                    <tr className="border-b border-slate-800 text-slate-400 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50 select-none">
+                      <th 
+                        onClick={() => handleSummarySort('name')}
+                        className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                        title="Urutkan berdasarkan Nama Pencuci"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Nama Pencuci</span>
+                          {summarySortField === 'name' ? (
+                            summarySortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0" />
+                          ) : (
+                            <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSummarySort('totalCars')}
+                        className="p-4 text-center cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                        title="Urutkan berdasarkan Jumlah Cuci"
+                      >
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>Jumlah Cuci (Mobil)</span>
+                          {summarySortField === 'totalCars' ? (
+                            summarySortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0" />
+                          ) : (
+                            <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSummarySort('totalWage')}
+                        className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                        title="Urutkan berdasarkan Gaji Kotor"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>Gaji Kotor (Rp)</span>
+                          {summarySortField === 'totalWage' ? (
+                            summarySortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0" />
+                          ) : (
+                            <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSummarySort('totalWithdrawals')}
+                        className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
+                        title="Urutkan berdasarkan Potongan / Kasbon"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>Potongan / Kasbon (Rp)</span>
+                          {summarySortField === 'totalWithdrawals' ? (
+                            summarySortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0" />
+                          ) : (
+                            <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSummarySort('netWage')}
+                        className="p-4 text-right text-brand-emerald cursor-pointer hover:bg-slate-800/40 hover:text-emerald-300 transition-colors group"
+                        title="Urutkan berdasarkan Sisa Gaji Bersih"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>Sisa Gaji Bersih (Rp)</span>
+                          {summarySortField === 'netWage' ? (
+                            summarySortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0" />
+                          ) : (
+                            <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
+                          )}
+                        </div>
+                      </th>
                       <th className="p-4 text-center">Aksi</th>
                     </tr>
                   </thead>
