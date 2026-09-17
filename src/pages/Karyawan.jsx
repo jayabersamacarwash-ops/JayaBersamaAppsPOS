@@ -957,100 +957,128 @@ const Karyawan = () => {
                           <tr className="border-b border-slate-800 text-slate-400 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50 select-none">
                             <th 
                               onClick={() => handleDetailSort('tanggal')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Tanggal & Waktu"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'tanggal' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Tanggal & Waktu"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Tanggal & Waktu</span>
-                                {detailSortField === 'tanggal' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'tanggal' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleDetailSort('platNomor')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Plat Nomor"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'platNomor' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Plat Nomor"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Plat Nomor</span>
-                                {detailSortField === 'platNomor' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'platNomor' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleDetailSort('paket')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Paket Cuci"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'paket' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Paket Cuci"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Paket Cuci</span>
-                                {detailSortField === 'paket' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'paket' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleDetailSort('variant')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Varian & Ukuran"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'variant' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Varian & Ukuran"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Varian & Ukuran</span>
-                                {detailSortField === 'variant' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'variant' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleDetailSort('split')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Porsi Cuci"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'split' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Porsi Cuci"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Porsi Cuci</span>
-                                {detailSortField === 'split' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'split' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleDetailSort('totalHarga')}
-                              className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Total Transaksi"
+                              className={`p-3.5 text-right cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'totalHarga' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Total Transaksi"
                             >
                               <div className="flex items-center justify-end gap-1.5">
                                 <span>Total Transaksi</span>
-                                {detailSortField === 'totalHarga' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'totalHarga' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleDetailSort('shareWage')}
-                              className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Bagian Upah"
+                              className={`p-3.5 text-right cursor-pointer transition-all duration-200 group ${
+                                detailSortField === 'shareWage' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Bagian Upah"
                             >
                               <div className="flex items-center justify-end gap-1.5">
                                 <span>Bagian Upah</span>
-                                {detailSortField === 'shareWage' ? (
-                                  detailSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {detailSortField === 'shareWage' ? (
+                                    detailSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                           </tr>
@@ -1123,58 +1151,74 @@ const Karyawan = () => {
                           <tr className="border-b border-slate-800 text-slate-400 font-semibold text-[10px] uppercase tracking-wider bg-slate-900/50 select-none">
                             <th 
                               onClick={() => handleWithdrawalSort('tanggal')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Tanggal Payout"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                withdrawalSortField === 'tanggal' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Tanggal Payout"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Tanggal Payout</span>
-                                {withdrawalSortField === 'tanggal' ? (
-                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {withdrawalSortField === 'tanggal' ? (
+                                    withdrawalSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleWithdrawalSort('keterangan')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Keterangan Pengeluaran"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                withdrawalSortField === 'keterangan' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Keterangan Pengeluaran"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Keterangan Pengeluaran</span>
-                                {withdrawalSortField === 'keterangan' ? (
-                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {withdrawalSortField === 'keterangan' ? (
+                                    withdrawalSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleWithdrawalSort('pos')}
-                              className="p-4 cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Sumber Dana (POS)"
+                              className={`p-3.5 cursor-pointer transition-all duration-200 group ${
+                                withdrawalSortField === 'pos' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Sumber Dana (POS)"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span>Sumber Dana (POS)</span>
-                                {withdrawalSortField === 'pos' ? (
-                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {withdrawalSortField === 'pos' ? (
+                                    withdrawalSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                             <th 
                               onClick={() => handleWithdrawalSort('nominal')}
-                              className="p-4 text-right cursor-pointer hover:bg-slate-800/40 hover:text-white transition-colors group"
-                              title="Urutkan berdasarkan Nominal Keluar"
+                              className={`p-3.5 text-right cursor-pointer transition-all duration-200 group ${
+                                withdrawalSortField === 'nominal' ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'hover:bg-slate-800/60 hover:text-white'
+                              }`}
+                              title="Klik untuk mengurutkan Nominal Keluar"
                             >
                               <div className="flex items-center justify-end gap-1.5">
                                 <span>Nominal Keluar</span>
-                                {withdrawalSortField === 'nominal' ? (
-                                  withdrawalSortDirection === 'asc' ? <ArrowUp size={12} className="text-brand-blue font-bold shrink-0 print:hidden" /> : <ArrowDown size={12} className="text-brand-blue font-bold shrink-0 print:hidden" />
-                                ) : (
-                                  <ArrowUpDown size={12} className="opacity-30 group-hover:opacity-100 transition-opacity shrink-0 print:hidden" />
-                                )}
+                                <span className="flex items-center">
+                                  {withdrawalSortField === 'nominal' ? (
+                                    withdrawalSortDirection === 'asc' ? <ArrowUp size={13} className="text-brand-blue stroke-[2.5] print:hidden" /> : <ArrowDown size={13} className="text-brand-blue stroke-[2.5] print:hidden" />
+                                  ) : (
+                                    <ArrowUpDown size={13} className="text-slate-600 group-hover:text-slate-300 transition-colors print:hidden" />
+                                  )}
+                                </span>
                               </div>
                             </th>
                           </tr>
