@@ -207,7 +207,15 @@ const Admin = () => {
       setStokBahan(realStok)
       setResepList(realResep)
       setDiscounts(dk || [])
-      setMasterCategories(mc || [])
+      if (!mc || mc.length === 0) {
+        setMasterCategories(DEFAULT_MASTER_CATEGORIES)
+        // Auto-seed to Supabase in background
+        for (const cat of DEFAULT_MASTER_CATEGORIES) {
+          supabase.from('master_categories').upsert(cat).then(() => {}).catch(() => {})
+        }
+      } else {
+        setMasterCategories(mc)
+      }
 
     } catch (err) {
       console.error('Error loading admin data:', err)

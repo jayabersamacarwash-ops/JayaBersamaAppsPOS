@@ -223,69 +223,89 @@ const Finance = () => {
 
   // Combined options (Standard choices filtered by role + custom choices)
   const allJenisOptions = useMemo(() => {
-    const set = new Set(allowedExpenseCats.map(c => c.jenis).filter(Boolean))
+    const list = Array.from(new Set(allowedExpenseCats.map(c => c.jenis).filter(Boolean)))
     customJenisList.forEach(j => {
       const norm = normalizeJenis(j)
-      if (norm) set.add(norm)
+      if (norm && !list.includes(norm)) list.push(norm)
     })
-    const list = Array.from(set)
-    return list.length > 0 ? list : ['Pengeluaran Cafe', 'Pengeluaran Carwash', 'Pengeluaran Bersama']
+    return list.length > 0 ? list : ['Pengeluaran Cafe', 'Pengeluaran Carwash', 'Pengeluaran Bersama', 'Non-Beban (Mutasi Kas / Pribadi)']
   }, [allowedExpenseCats, customJenisList])
 
   const allKategoriOptions = useMemo(() => {
-    let cats = allowedExpenseCats
-    if (expenseForm.jenis) {
-      const filteredByJenis = allowedExpenseCats.filter(c => c.jenis === expenseForm.jenis)
-      if (filteredByJenis.length > 0) {
-        cats = filteredByJenis
-      }
+    const targetJenis = expenseForm.jenis || (allJenisOptions.length > 0 ? allJenisOptions[0] : 'Pengeluaran Cafe')
+    const filtered = allowedExpenseCats.filter(c => 
+      String(c.jenis || '').trim().toLowerCase() === String(targetJenis).trim().toLowerCase()
+    )
+    if (filtered.length > 0) {
+      return filtered.map(c => c.nama_kategori)
     }
-    const map = new Map()
-    cats.forEach(c => {
-      const norm = normalizeCategory(c.nama_kategori)
-      if (norm) map.set(norm.toLowerCase(), norm)
-    })
-    customKategoriList.forEach(k => {
-      const norm = normalizeCategory(k)
-      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
-    })
-    return Array.from(map.values())
-  }, [allowedExpenseCats, expenseForm.jenis, customKategoriList])
+    // Fallback if custom jenis without master matching
+    return allowedExpenseCats.map(c => c.nama_kategori)
+  }, [allowedExpenseCats, expenseForm.jenis, allJenisOptions])
 
   const allIncomeJenisOptions = useMemo(() => {
-    const set = new Set(allowedIncomeCats.map(c => c.jenis).filter(Boolean))
+    const list = Array.from(new Set(allowedIncomeCats.map(c => c.jenis).filter(Boolean)))
     customIncomeJenisList.forEach(j => {
       const norm = normalizeJenis(j)
-      if (norm) set.add(norm)
+      if (norm && !list.includes(norm)) list.push(norm)
     })
-    const list = Array.from(set)
     return list.length > 0 ? list : ['Pemasukan Non-POS']
   }, [allowedIncomeCats, customIncomeJenisList])
 
   const allIncomeKategoriOptions = useMemo(() => {
-    let cats = allowedIncomeCats
-    if (incomeForm.jenis) {
-      const filteredByJenis = allowedIncomeCats.filter(c => c.jenis === incomeForm.jenis)
-      if (filteredByJenis.length > 0) {
-        cats = filteredByJenis
-      }
+    const targetJenis = incomeForm.jenis || (allIncomeJenisOptions.length > 0 ? allIncomeJenisOptions[0] : 'Pemasukan Non-POS')
+    const filtered = allowedIncomeCats.filter(c => 
+      String(c.jenis || '').trim().toLowerCase() === String(targetJenis).trim().toLowerCase()
+    )
+    if (filtered.length > 0) {
+      return filtered.map(c => c.nama_kategori)
     }
-    const map = new Map()
-    cats.forEach(c => {
-      const norm = normalizeCategory(c.nama_kategori)
-      if (norm) map.set(norm.toLowerCase(), norm)
-    })
-    customIncomeKategoriList.forEach(k => {
-      const norm = normalizeCategory(k)
-      if (norm && !map.has(norm.toLowerCase())) map.set(norm.toLowerCase(), norm)
-    })
-    return Array.from(map.values())
-  }, [allowedIncomeCats, incomeForm.jenis, customIncomeKategoriList])
+    return allowedIncomeCats.map(c => c.nama_kategori)
+  }, [allowedIncomeCats, incomeForm.jenis, allIncomeJenisOptions])
 
   // Backward compatibility alias
   const jenisOptions = allJenisOptions
   const kategoriOptions = allKategoriOptions
   const incomeKategoriOptions = allIncomeKategoriOptions
+
+  const handleOpenExpenseModal = () => {
+    const firstJenis = allJenisOptions[0] || 'Pengeluaran Cafe'
+    const matching = allowedExpenseCats.filter(c => 
+      String(c.jenis || '').trim().toLowerCase() === String(firstJenis).trim().toLowerCase()
+    )
+    const firstCat = matching.length > 0 ? matching[0].nama_kategori : ''
+    setExpenseForm({
+      tanggal: new Date().toLocaleDateString('en-CA'),
+      jenis: firstJenis,
+      kategori: firstCat,
+      total_harga: 0,
+      keterangan: '',
+      pos: 'SALDO CASH'
+    })
+    setBarangMasukList([])
+    setIsCustomExpenseJenis(false)
+    setIsCustomExpenseKategori(false)
+    setShowExpenseModal(true)
+  }
+
+  const handleOpenIncomeModal = () => {
+    const firstJenis = allIncomeJenisOptions[0] || 'Pemasukan Non-POS'
+    const matching = allowedIncomeCats.filter(c => 
+      String(c.jenis || '').trim().toLowerCase() === String(firstJenis).trim().toLowerCase()
+    )
+    const firstCat = matching.length > 0 ? matching[0].nama_kategori : ''
+    setIncomeForm({
+      tanggal: new Date().toLocaleDateString('en-CA'),
+      nominal: '',
+      keterangan: '',
+      jenis: firstJenis,
+      kategori: firstCat,
+      pos: 'SALDO CASH'
+    })
+    setIsCustomIncomeJenis(false)
+    setIsCustomIncomeKategori(false)
+    setShowIncomeModal(true)
+  }
 
   // Alert & Confirm Helpers
   const showAlert = (message, title = 'Informasi') => {
@@ -388,6 +408,8 @@ const Finance = () => {
       const { data: mcData } = await supabase.from('master_categories').select('*')
       if (mcData && mcData.length > 0) {
         setMasterCategories(mcData)
+      } else {
+        setMasterCategories(DEFAULT_MASTER_CATEGORIES)
       }
 
       // 6. Fetch Stok Barang
@@ -1282,14 +1304,14 @@ const Finance = () => {
             Refresh
           </button>
           <button
-            onClick={() => setShowIncomeModal(true)}
+            onClick={handleOpenIncomeModal}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-brand-emerald hover:bg-emerald-400 active:bg-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-emerald/20 transition-all text-xs"
           >
             <Plus size={15} />
             + Pemasukan
           </button>
           <button
-            onClick={() => setShowExpenseModal(true)}
+            onClick={handleOpenExpenseModal}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-brand-rose hover:bg-rose-500 active:bg-rose-600 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-rose/20 transition-all text-xs"
           >
             <Plus size={15} />
@@ -2450,11 +2472,22 @@ const Finance = () => {
                       <select
                         value={expenseForm.jenis}
                         onChange={(e) => {
-                          if (e.target.value === '__CUSTOM__') {
+                          const selectedJenis = e.target.value
+                          if (selectedJenis === '__CUSTOM__') {
                             setIsCustomExpenseJenis(true)
-                            setExpenseForm(prev => ({ ...prev, jenis: '' }))
+                            setExpenseForm(prev => ({ ...prev, jenis: '', kategori: '' }))
                           } else {
-                            setExpenseForm(prev => ({ ...prev, jenis: e.target.value }))
+                            const matchingCats = allowedExpenseCats.filter(c => 
+                              String(c.jenis || '').trim().toLowerCase() === String(selectedJenis).trim().toLowerCase()
+                            )
+                            const firstCat = matchingCats.length > 0 ? matchingCats[0].nama_kategori : ''
+                            setExpenseForm(prev => ({ 
+                              ...prev, 
+                              jenis: selectedJenis,
+                              kategori: firstCat,
+                              total_harga: firstCat.includes('Bahan Baku') ? 0 : prev.total_harga
+                            }))
+                            if (!firstCat.includes('Bahan Baku')) setBarangMasukList([])
                           }
                         }}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-rose"
@@ -2708,11 +2741,20 @@ const Finance = () => {
                       <select
                         value={incomeForm.jenis}
                         onChange={(e) => {
-                          if (e.target.value === '__CUSTOM__') {
+                          const selectedJenis = e.target.value
+                          if (selectedJenis === '__CUSTOM__') {
                             setIsCustomIncomeJenis(true)
-                            setIncomeForm(prev => ({ ...prev, jenis: '' }))
+                            setIncomeForm(prev => ({ ...prev, jenis: '', kategori: '' }))
                           } else {
-                            setIncomeForm(prev => ({ ...prev, jenis: e.target.value }))
+                            const matchingCats = allowedIncomeCats.filter(c => 
+                              String(c.jenis || '').trim().toLowerCase() === String(selectedJenis).trim().toLowerCase()
+                            )
+                            const firstCat = matchingCats.length > 0 ? matchingCats[0].nama_kategori : ''
+                            setIncomeForm(prev => ({ 
+                              ...prev, 
+                              jenis: selectedJenis,
+                              kategori: firstCat
+                            }))
                           }
                         }}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:border-brand-emerald"
